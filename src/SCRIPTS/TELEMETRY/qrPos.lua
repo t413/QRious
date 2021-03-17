@@ -529,25 +529,27 @@ function Qr:genframe(instring)
     if self.progress == 6 then
         -- calculate and append ECC
         -- calculate generator polynomial
-        self.genpoly[0] = 1;
-        if self.resume == nil then
-            self.resume = {i=0, j=0}
+        if self.resume == nil then --first time through
+            self.genpoly[0] = 1;
+            self.resume = {i=0, j=0} --j for 2nd loop below
         end
         for i = self.resume.i, self.eccblkwid - 1 do
+            self.resume.i = i
+            if getUsage() > 40 then return end
             self.genpoly[i + 1] = 1;
             for j = i, 1, -1 do
-                if getUsage() > 60 then
-                    self.resume = {i=i, j=j}
-                    return
-                end
                 self.genpoly[j] = (self.genpoly[j] >= 1) and bit32.bxor(self.genpoly[j - 1], self:gexpLookup(self:modnn(self:glogLookup(self.genpoly[j]) + i))) or self.genpoly[j - 1] --^
             end
             self.genpoly[0] = self:gexpLookup(self:modnn(self:glogLookup(self.genpoly[0]) + i))
         end
-        self.resume = nil
-        for i = 0, self.eccblkwid do --inclusive
-            self.genpoly[i] = self:glogLookup(self.genpoly[i]); -- use logs for genpoly[] to save calc step
+        self.resume.i = self.resume.i + 1 --increment once more
+        for j = self.resume.j, self.eccblkwid do --inclusive
+            self.resume.j = j
+            if getUsage() > 40 then return end
+            self.genpoly[j] = self:glogLookup(self.genpoly[j]); -- use logs for genpoly[] to save calc step
         end
+        self.resume = nil
+        print("QR: genpoly", table ~= nil and table.unpack(self.genpoly) or "")
         print("QR: finished generator polynomial", getUsage())
         self.progress = self.progress + 1
         if (getUsage() > 50) then return end
@@ -741,7 +743,7 @@ local function run(event)
 
     elseif loopc > 1 then
         frame = qr:genframe(str)
-        print("genframe at ", qr.progress, getUsage(), frame)
+        print("Main loop exit at step:", qr.progress, "load:", getUsage(), "frame:", frame)
         if frame ~= nil then
             print("FINISHED")
             printFrame(frame, qr.width, "  ", "##")
@@ -758,12 +760,10 @@ if lcd == nil then
         return math.floor((os.clock() - startTime) * 100000)
     end
     print("defined getUsage")
-    for i = 0, 200 do
+    for i = 0, 50 do
         startTime = os.clock()
         if run() == 1 then return end
-        print("finished loop ", getUsage())
         repeat until (os.clock() - startTime) > 0.01
-        print("finished delay ", getUsage())
    end
     print("end running")
 end
