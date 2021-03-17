@@ -35,6 +35,7 @@ Qr = {
     datablkw  =0,
     eccblkwid =0,
     maxlength = nil,
+    isvalid   =false,
     progress  =0,
     resume = nil --continuation data store
 }
@@ -275,6 +276,7 @@ function Qr:genframe(instring)
 
     if self.progress == 0 then
         print("Qr: begin!")
+        self.isvalid = false
         self.progress = self.progress + 1
     end
     if self.progress == 1 then
@@ -679,8 +681,21 @@ function Qr:genframe(instring)
         self.strinbuf = {}
 
         -- self.strinbuf = shallowcopy(self.qrframe)
-        local t = 0
-        self:applymask(t);
+        -- self:applymask(t);
+        if self.resume == nil then
+            self.resume = {y = 0}
+        end
+        local t = 0 --TODO yes, here's method 0:
+        for y = self.resume.y, self.width - 1 do
+            self.resume.y = y
+            if (getUsage() > 60) then return end
+            for x = 0, self.width - 1 do
+                if bit32.band((x + y), 1) == 0 and not self:ismasked(x, y) then
+                    self.qrframe[x + y * self.width] = bit32.bxor(self.qrframe[x + y * self.width], 1) --^
+                end
+            end
+        end
+        self.resume = nil
         -- x = self.badcheck(); --TODO tim
 
 
@@ -705,7 +720,8 @@ function Qr:genframe(instring)
         print("QR: finished appending ecc", getUsage())
         self.progress = 0
         --TODO self:reset
-        return self.qrframe
+        self.isvalid = true
+        return self.isvalid
     end
 end
 
