@@ -304,7 +304,7 @@ function Qr:genframe(instring)
         end
         self.resume = nil
         self.width = 17 + 4 * self.version;
-        print("width version", self.width, self.version, getUsage())
+        print("width version", self.width, self.version)
 
         self.progress = self.progress + 1
         if (getUsage() > 50) then return end
@@ -324,7 +324,7 @@ function Qr:genframe(instring)
         for t = 0, (self.width * (self.width + 1) + 1) / 2 - 1 do
             self.framask[t] = 0
         end
-        print("QR: finished allocate", getUsage())
+        print("QR: finished allocate")
 
         self.progress = self.progress + 1
         if (getUsage() > 50) then return end
@@ -372,7 +372,7 @@ function Qr:genframe(instring)
             end
         end
 
-        print("QR: finished alignment", getUsage())
+        print("QR: finished alignment")
         self.progress = self.progress + 1
         if (getUsage() > 50) then return end
     end
@@ -443,7 +443,7 @@ function Qr:genframe(instring)
             end
         end
 
-        print("QR: finished basic fill", getUsage())
+        print("QR: finished basic fill")
         self.progress = self.progress + 1
         if (getUsage() > 50) then return end
     end
@@ -501,7 +501,7 @@ function Qr:genframe(instring)
             self.strinbuf[i] = 0xec
             self.strinbuf[i + 1] = 0x11
         end
-        print("QR: finished bitstream", getUsage())
+        print("QR: finished bitstream")
         self.progress = self.progress + 1
         if (getUsage() > 10) then return end
     end
@@ -529,8 +529,8 @@ function Qr:genframe(instring)
             self.genpoly[j] = self:glogLookup(self.genpoly[j]); -- use logs for genpoly[] to save calc step
         end
         self.resume = nil
-        print("QR: genpoly", table ~= nil and table.unpack(self.genpoly) or "")
-        print("QR: finished generator polynomial", getUsage())
+        if table ~= nil then print("QR: genpoly", table.unpack(self.genpoly)) end --desktop only
+        print("QR: finished generator polynomial")
         self.progress = self.progress + 1
         if (getUsage() > 50) then return end
     end
@@ -541,7 +541,6 @@ function Qr:genframe(instring)
             self.resume = {blk=0, j=0, k=self.maxlength, y=0}
         end
         local ctx = self.resume
-        print("neccblk 1 vs 2", self.neccblk1, self.neccblk2)
         for blk = ctx.blk, 1 do
             for j = ctx.j, (blk == 0 and self.neccblk1 or self.neccblk2) - 1 do
                 -- Calculate and append ECC data to data block.  Block is in strinbuf, indexes to buffers given.
@@ -555,7 +554,6 @@ function Qr:genframe(instring)
                 for id = ctx.id, self.datablkw + blk - 1 do
                     ctx.id = id
                     if getUsage() > 60 then return end
-                    print("QR appendrs id", id, j)
                     local fb = self:glogLookup(bit32.bxor(self.strinbuf[ctx.y + id], self.strinbuf[ctx.k])) --^
                     if fb ~= 255 then     --fb term is non-zero
                         for jd = 1, self.eccblkwid - 1 do
@@ -575,7 +573,7 @@ function Qr:genframe(instring)
             end
             ctx.blk = blk
         end
-        print("QR: finished appending ecc", getUsage())
+        print("QR: finished appending ecc")
         self.resume = nil
         self.progress = self.progress + 1
         if (getUsage() > 50) then return end
@@ -608,7 +606,7 @@ function Qr:genframe(instring)
         end
 
         self.strinbuf = shallowcopy(self.eccbuf); --copy by value!
-        print("QR: finished interleaving blocks", getUsage())
+        print("QR: finished interleaving blocks")
         self.progress = self.progress + 1
         if (getUsage() > 50) then return end
     end
@@ -670,10 +668,10 @@ function Qr:genframe(instring)
                 t = bit32.lshift(t, 1)
             end
         end
-        print("QR: finished packing", getUsage())
+        print("QR: finished packing")
         self.resume = nil
         self.progress = self.progress + 1
-        if (getUsage() > 50) then return end
+        if (getUsage() > 20) then return end
     end
 
     if self.progress == 10 then
@@ -717,7 +715,7 @@ function Qr:genframe(instring)
             end
             y = bit32.rshift(y, 1)
         end
-        print("QR: finished appending ecc", getUsage())
+        print("QR: finished appending ecc")
         self.progress = 0
         --TODO self:reset
         self.isvalid = true
