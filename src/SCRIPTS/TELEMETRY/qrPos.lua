@@ -616,49 +616,52 @@ function Qr:genframe(instring)
 
     if self.progress == 9 then
         -- pack bits into frame avoiding masked area.
-        local x = self.width - 1;
-        local y = self.width - 1;
-        local v = true;         -- up, minus
-        local k = true;
+        if self.resume == nil then
+            self.resume = {x = self.width - 1, y = self.width - 1, v = true, k = true, i = 0}
+        end
+        local ctx = self.resume --shorter name..
         -- inteleaved data and ecc codes
         local m = (self.datablkw + self.eccblkwid) * (self.neccblk1 + self.neccblk2) + self.neccblk2;
-        for i = 0, m - 1 do
+        for i = self.resume.i, m - 1 do
+            self.resume.i = i
+            if (getUsage() > 80) then return end
+
             local t = self.strinbuf[i]
             for j = 0, 7 do
                 if bit32.band(0x80, t) >= 1 then
-                    self.qrframe[x + self.width * y] = 1
+                    self.qrframe[ctx.x + self.width * ctx.y] = 1
                 end
                 while true do   -- find next fill position
-                    if v then
-                        x = x - 1
+                    if ctx.v then
+                        ctx.x = ctx.x - 1
                     else
-                        x = x + 1
-                        if k then
-                            if y ~= 0 then
-                                y = y - 1
+                        ctx.x = ctx.x + 1
+                        if ctx.k then
+                            if ctx.y ~= 0 then
+                                ctx.y = ctx.y - 1
                             else
-                                x = x - 2;
-                                k = not k;
-                                if x == 6 then
-                                    x = x - 1
-                                    y = 9;
+                                ctx.x = ctx.x - 2;
+                                ctx.k = not ctx.k;
+                                if ctx.x == 6 then
+                                    ctx.x = ctx.x - 1
+                                    ctx.y = 9;
                                 end
                             end
                         else
-                            if y ~= (self.width - 1) then
-                                y = y + 1
+                            if ctx.y ~= (self.width - 1) then
+                                ctx.y = ctx.y + 1
                             else
-                                x = x - 2
-                                k = not k
-                                if x == 6 then
-                                    x = x - 1
-                                    y = y - 8;
+                                ctx.x = ctx.x - 2
+                                ctx.k = not ctx.k
+                                if ctx.x == 6 then
+                                    ctx.x = ctx.x - 1
+                                    ctx.y = ctx.y - 8;
                                 end
                             end
                         end
                     end
-                    v = not v;
-                    if not self:ismasked(x, y) then
+                    ctx.v = not ctx.v;
+                    if not self:ismasked(ctx.x, ctx.y) then
                         break
                     end
                 end
@@ -666,6 +669,7 @@ function Qr:genframe(instring)
             end
         end
         print("QR: finished packing", getUsage())
+        self.resume = nil
         self.progress = self.progress + 1
         if (getUsage() > 50) then return end
     end
