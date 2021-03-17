@@ -300,8 +300,14 @@ function Qr:genframe(instring)
         self.progress = self.progress + 1
     end
     if self.progress == 1 then
+        if self.resume == nil then self.resume = {vsn = 0} end
         -- find the smallest version that fits the string
-        for vsn = 0, 39 do
+        for vsn = self.resume.vsn, 39 do
+            if getUsage() > 60 then
+                self.resume.vsn = vsn
+                return
+            end
+            print("vsn", vsn)
             local k = (self.ecclevel - 1) * 4 + (vsn - 1) * 16
             self.neccblk1 = self:eccblocksLookup(k)
             k = k + 1
@@ -316,6 +322,7 @@ function Qr:genframe(instring)
                 break
             end
         end
+        self.resume = nil
         self.width = 17 + 4 * self.version;
         print("width version", self.width, self.version, getUsage())
 
