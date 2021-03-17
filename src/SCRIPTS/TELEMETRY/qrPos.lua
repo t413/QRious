@@ -200,11 +200,11 @@ end
 
 -- Calculate and append ECC data to data block.  Block is in strinbuf, indexes to buffers given.
 function Qr:appendrs(data, dlen, ecbuf, eclen)
+    print("QR appendrs", data, dlen, ecbuf, eclen)
     for i = 0, eclen - 1 do
         self.strinbuf[ecbuf + i] = 0
     end
     for i = 0, dlen - 1 do
-        print("QR appendrs", i, getUsage())
         local fb = self:glogLookup(bit32.bxor(self.strinbuf[data + i], self.strinbuf[ecbuf])) --^
         if fb ~= 255 then     --fb term is non-zero
             for j = 1, eclen - 1 do
@@ -277,6 +277,8 @@ function Qr:applymask(m)
 end
 
 local function printFrame(buffer, width, back, fill)
+    back = back or "  "
+    fill = fill or "##"
     for i = -3, width + 2 do
         local line = ""
         for j = 0, width - 1 do
@@ -293,7 +295,11 @@ end
 --Generate QR frame array
 function Qr:genframe(instring)
 
-    if self.progress < 1 then
+    if self.progress == 0 then
+        print("Qr: begin!")
+        self.progress = self.progress + 1
+    end
+    if self.progress == 1 then
         -- find the smallest version that fits the string
         for vsn = 0, 39 do
             local k = (self.ecclevel - 1) * 4 + (vsn - 1) * 16
@@ -313,11 +319,11 @@ function Qr:genframe(instring)
         self.width = 17 + 4 * self.version;
         print("width version", self.width, self.version, getUsage())
 
-        self.progress = 1
+        self.progress = self.progress + 1
         if (getUsage() > 50) then return end
     end
 
-    if self.progress < 2 then
+    if self.progress == 2 then
         -- allocate, clear and setup data structures
         local eccbufLen = self.datablkw + (self.datablkw + self.eccblkwid) * (self.neccblk1 + self.neccblk2) + self.neccblk2
         for t = 0, eccbufLen - 1 do
@@ -333,11 +339,11 @@ function Qr:genframe(instring)
         end
         print("QR: finished allocate", getUsage())
 
-        self.progress = 2
+        self.progress = self.progress + 1
         if (getUsage() > 50) then return end
     end
 
-    if self.progress < 3 then
+    if self.progress == 3 then
         -- insert finders - black to frame, white to mask
         for t = 0, 2 do
             local k = 0;
@@ -380,11 +386,11 @@ function Qr:genframe(instring)
         end
 
         print("QR: finished alignment", getUsage())
-        self.progress = 3
+        self.progress = self.progress + 1
         if (getUsage() > 50) then return end
     end
 
-    if self.progress < 4 then
+    if self.progress == 4 then
         -- single black
         self.qrframe[8 + self.width * (self.width - 8)] = 1
 
@@ -451,11 +457,11 @@ function Qr:genframe(instring)
         end
 
         print("QR: finished basic fill", getUsage())
-        self.progress = 4
+        self.progress = self.progress + 1
         if (getUsage() > 50) then return end
     end
 
-    if self.progress < 5 then
+    if self.progress == 5 then
         -- convert string to bitstream
         -- 8 bit data to QR-coded 8 bit data (numeric or alphanum, or kanji not supported)
         local v = #instring
@@ -509,11 +515,11 @@ function Qr:genframe(instring)
             self.strinbuf[i + 1] = 0x11
         end
         print("QR: finished bitstream", getUsage())
-        self.progress = 5
+        self.progress = self.progress + 1
         if (getUsage() > 10) then return end
     end
 
-    if self.progress < 6 then
+    if self.progress == 6 then
         -- calculate and append ECC
         -- calculate generator polynomial
         self.genpoly[0] = 1;
@@ -536,11 +542,11 @@ function Qr:genframe(instring)
             self.genpoly[i] = self:glogLookup(self.genpoly[i]); -- use logs for genpoly[] to save calc step
         end
         print("QR: finished generator polynomial", getUsage())
-        self.progress = 6
+        self.progress = self.progress + 1
         if (getUsage() > 50) then return end
     end
 
-    if self.progress < 7 then
+    if self.progress == 7 then
         -- append ecc to data buffer
         if self.resume == nil then
             self.resume = {i=0, j=0, k=self.maxlength, y=0, a=0}
@@ -554,13 +560,15 @@ function Qr:genframe(instring)
                 self.resume.k = self.resume.k + self.eccblkwid
                 self.resume.j = j
             end
+            self.resume.i = i
         end
         print("QR: finished appending ecc", getUsage())
-        self.progress = 7
+        self.resume = nil
+        self.progress = self.progress + 1
         if (getUsage() > 50) then return end
     end
 
-    if self.progress < 8 then
+    if self.progress == 8 then
         -- interleave blocks
         local y = 0;
         local iback = 0
@@ -588,11 +596,14 @@ function Qr:genframe(instring)
 
         self.strinbuf = shallowcopy(self.eccbuf); --copy by value!
         print("QR: finished interleaving blocks", getUsage())
-        self.progress = 8
+        self.progress = self.progress + 1
         if (getUsage() > 50) then return end
     end
 
-    if self.progress < 9 then
+    -- self:debugDump()
+    -- quit()
+
+    if self.progress == 9 then
         -- pack bits into frame avoiding masked area.
         local x = self.width - 1;
         local y = self.width - 1;
@@ -644,11 +655,11 @@ function Qr:genframe(instring)
             end
         end
         print("QR: finished packing", getUsage())
-        self.progress = 8
+        self.progress = self.progress + 1
         if (getUsage() > 50) then return end
     end
 
-    if self.progress < 9 then
+    if self.progress == 10 then
         -- save pre-mask copy of frame
         self.strinbuf = {}
 
@@ -678,10 +689,21 @@ function Qr:genframe(instring)
         end
         print("QR: finished appending ecc", getUsage())
         self.progress = 0
+        --TODO self:reset
         return self.qrframe
     end
 end
 
+function Qr:debugDump()
+    print("frame:")
+    printFrame(self.qrframe, self.width)
+    print("mask:")
+    printFrame(self.framask, 16)
+    print("eccbuf", table.unpack(self.eccbuf))
+    print("strinbuf", table.unpack(self.strinbuf))
+    print("genpoly", table.unpack(self.genpoly))
+    print("eccblkwid", self.eccblkwid)
+end
 
 local loopc = 0
 local str, qr, frame
