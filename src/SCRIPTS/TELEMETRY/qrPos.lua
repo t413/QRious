@@ -735,12 +735,12 @@ function Qr:debugDump()
 end
 
 local loopc = 0
-local str, qr, frame
+local str, qr, renderline
 
 local function run(event)
     loopc = loopc + 1
-    print("OpenTX frame", loopc)
-    if lcd ~= nil then
+    if loopc > 100 then return 1 end
+    if false then --lcd ~= nil then
         lcd.drawFilledRectangle(0, 0, LCD_W, LCD_H, ERASE)
         local gpsfield = getFieldInfo("GPS")
         if gpsfield ~= nil then
@@ -759,14 +759,35 @@ local function run(event)
     if loopc == 1 then
         str = "http://maps.google.com/?q=37.858784%2C-122.198935" --http://maps.google.com/?q=  GURU://
         qr = Qr:new(nil)
-        print("new at ", getUsage())
 
     elseif loopc > 1 then
-        frame = qr:genframe(str)
-        print("Main loop exit at step:", qr.progress, "load:", getUsage(), "frame:", frame)
-        if frame ~= nil then
-            print("FINISHED")
-            printFrame(frame, qr.width, "  ", "##")
+        if not qr.isvalid then
+            if qr:genframe(str) then
+                renderline = 0
+                print("JUST FINISHED QR")
+                if lcd == nil then printFrame(qr.qrframe, qr.width) end
+                return 1 --ends desktop script
+            end
+            print("QR at frame", loopc, "progress", qr.progress, "load:", getUsage(), "valid", qr.isvalid)
+        else
+            if lcd ~= nil and renderline ~= nil then
+                local pxl = math.floor(math.min(LCD_H, LCD_H) / (qr.width + 4))
+                if renderline == 0 then
+                    lcd.clear()
+                    -- lcd.drawFilledRectangle(0, 0, pxl * (qr.width + 4), pxl * (qr.width + 4), ERASE)
+                end
+                for i = renderline, qr.width - 1 do
+                    renderline = i
+                    if getUsage() > 70 then return end
+                    for j = 0, qr.width - 1 do
+                        if qr.qrframe[j * qr.width + i] == 1 then
+                            lcd.drawFilledRectangle(i * pxl + pxl * 2, j * pxl + pxl * 2, pxl, pxl, FORCE)
+                        end
+                    end
+                end
+                print("JUST FINISHED rendering")
+                renderline = nil
+            end
             return 1
         end
     end
