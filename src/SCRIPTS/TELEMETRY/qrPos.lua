@@ -79,8 +79,8 @@ function Qr:modnn(x)
 end
 
 -- Galois field log table
-function Qr:glogLookup(i)
-    local tbl = {
+function Qr:getGlogLookup()
+    return {
         0xff, 0x00, 0x01, 0x19, 0x02, 0x32, 0x1a, 0xc6, 0x03, 0xdf, 0x33, 0xee, 0x1b, 0x68, 0xc7, 0x4b,
         0x04, 0x64, 0xe0, 0x0e, 0x34, 0x8d, 0xef, 0x81, 0x1c, 0xc1, 0x69, 0xf8, 0xc8, 0x08, 0x4c, 0x71,
         0x05, 0x8a, 0x65, 0x2f, 0xe1, 0x24, 0x0f, 0x21, 0x35, 0x93, 0x8e, 0xda, 0xf0, 0x12, 0x82, 0x45,
@@ -98,12 +98,11 @@ function Qr:glogLookup(i)
         0xcb, 0x59, 0x5f, 0xb0, 0x9c, 0xa9, 0xa0, 0x51, 0x0b, 0xf5, 0x16, 0xeb, 0x7a, 0x75, 0x2c, 0xd7,
         0x4f, 0xae, 0xd5, 0xe9, 0xe6, 0xe7, 0xad, 0xe8, 0x74, 0xd6, 0xf4, 0xea, 0xa8, 0x50, 0x58, 0xaf
     }
-    return tbl[i + 1]
 end
 
 -- Galios field exponent table
-function Qr:gexpLookup(i)
-    local tbl = {
+function Qr:getGexpLookup()
+    return {
         0x01, 0x02, 0x04, 0x08, 0x10, 0x20, 0x40, 0x80, 0x1d, 0x3a, 0x74, 0xe8, 0xcd, 0x87, 0x13, 0x26,
         0x4c, 0x98, 0x2d, 0x5a, 0xb4, 0x75, 0xea, 0xc9, 0x8f, 0x03, 0x06, 0x0c, 0x18, 0x30, 0x60, 0xc0,
         0x9d, 0x27, 0x4e, 0x9c, 0x25, 0x4a, 0x94, 0x35, 0x6a, 0xd4, 0xb5, 0x77, 0xee, 0xc1, 0x9f, 0x23,
@@ -121,12 +120,11 @@ function Qr:gexpLookup(i)
         0x12, 0x24, 0x48, 0x90, 0x3d, 0x7a, 0xf4, 0xf5, 0xf7, 0xf3, 0xfb, 0xeb, 0xcb, 0x8b, 0x0b, 0x16,
         0x2c, 0x58, 0xb0, 0x7d, 0xfa, 0xe9, 0xcf, 0x83, 0x1b, 0x36, 0x6c, 0xd8, 0xad, 0x47, 0x8e, 0x00
     }
-    return tbl[i + 1]
 end
 
 -- 4 per version: number of blocks 1,2; data width; ecc width
-function Qr:eccblocksLookup(i)
-    local tbl = {
+function Qr:getEccblocksLookup()
+    return {
         1, 0, 19, 7, 1, 0, 16, 10, 1, 0, 13, 13, 1, 0, 9, 17,
         1, 0, 34, 10, 1, 0, 28, 16, 1, 0, 22, 22, 1, 0, 16, 28,
         1, 0, 55, 15, 1, 0, 44, 26, 2, 0, 17, 18, 2, 0, 13, 22,
@@ -168,10 +166,9 @@ function Qr:eccblocksLookup(i)
         20, 4, 117, 30, 40, 7, 47, 28, 43, 22, 24, 30, 10, 67, 15, 30,
         19, 6, 118, 30, 18, 31, 47, 28, 34, 34, 24, 30, 20, 61, 15, 30
     }
-    return tbl[i + 1]
 end
 
--- alignment pattern
+-- alignment pattern (used once)
 function Qr:adeltaLookup(i)
     local tbl = {
         0, 11, 15, 19, 23, 27, 31, --force 1 pat
@@ -181,7 +178,7 @@ function Qr:adeltaLookup(i)
     return tbl[i + 1]
 end
 
--- version block
+-- version block (used once)
 function Qr:vpatLookup(i)
     local tbl = {
         0xc94, 0x5bc, 0xa99, 0x4d3, 0xbf6, 0x762, 0x847, 0x60d,
@@ -193,6 +190,7 @@ function Qr:vpatLookup(i)
     return tbl[i + 1]
 end
 
+-- format word lookup (used once)
 function Qr:fmtwordLookup(i)
     local tbl = {
         0x77c4, 0x72f3, 0x7daa, 0x789d, 0x662f, 0x6318, 0x6c41, 0x6976, --L
@@ -287,6 +285,7 @@ function Qr:genframe(instring)
     if self.progress == 1 then
         if self.resume == nil then self.resume = {vsn = 0} end
         -- find the smallest version that fits the string
+        local lookup = self:getEccblocksLookup()
         for vsn = self.resume.vsn, 39 do
             if getUsage() > 60 then
                 self.resume.vsn = vsn
@@ -294,13 +293,13 @@ function Qr:genframe(instring)
             end
             print("vsn", vsn)
             local k = (self.ecclevel - 1) * 4 + (vsn - 1) * 16
-            self.neccblk1 = self:eccblocksLookup(k)
+            self.neccblk1 = lookup[k + 1]
             k = k + 1
-            self.neccblk2 = self:eccblocksLookup(k)
+            self.neccblk2 = lookup[k + 1]
             k = k + 1
-            self.datablkw = self:eccblocksLookup(k)
+            self.datablkw = lookup[k + 1]
             k = k + 1
-            self.eccblkwid = self:eccblocksLookup(k)
+            self.eccblkwid = lookup[k + 1]
             k = self.datablkw * (self.neccblk1 + self.neccblk2) + self.neccblk2 - 3 + (self.version <= 9 and 1 or 0)
             if #instring <= k then
                 self.version = vsn
@@ -516,24 +515,25 @@ function Qr:genframe(instring)
         -- calculate generator polynomial
         if self.resume == nil then --first time through
             self.genpoly[0] = 1;
-            self.resume = {i=0, j=0} --j for 2nd loop below
+            self.resume = {i=0, j=0, gexp = self:getGexpLookup(), glog=self:getGlogLookup()} --j for 2nd loop below
         end
-        for i = self.resume.i, self.eccblkwid - 1 do
-            self.resume.i = i
+        local ctx = self.resume
+        for i = ctx.i, self.eccblkwid - 1 do
+            ctx.i = i
             if getUsage() > 40 then return end
             self.genpoly[i + 1] = 1;
             for j = i, 1, -1 do
-                self.genpoly[j] = (self.genpoly[j] >= 1) and bit32.bxor(self.genpoly[j - 1], self:gexpLookup(self:modnn(self:glogLookup(self.genpoly[j]) + i))) or self.genpoly[j - 1] --^
+                self.genpoly[j] = (self.genpoly[j] >= 1) and bit32.bxor(self.genpoly[j - 1], ctx.gexp[1 + self:modnn(ctx.glog[1 + self.genpoly[j]] + i)]) or self.genpoly[j - 1] --^
             end
-            self.genpoly[0] = self:gexpLookup(self:modnn(self:glogLookup(self.genpoly[0]) + i))
+            self.genpoly[0] = ctx.gexp[1 + self:modnn(ctx.glog[1 + self.genpoly[0]] + i)]
         end
-        self.resume.i = self.resume.i + 1 --increment once more
-        for j = self.resume.j, self.eccblkwid do --inclusive
-            self.resume.j = j
+        ctx.i = ctx.i + 1 --increment once more
+        for j = ctx.j, self.eccblkwid do --inclusive
+            ctx.j = j
             if getUsage() > 40 then return end
-            self.genpoly[j] = self:glogLookup(self.genpoly[j]); -- use logs for genpoly[] to save calc step
+            self.genpoly[j] = ctx.glog[1 + self.genpoly[j]]; -- use logs for genpoly[] to save calc step
         end
-        self.resume = nil
+        -- don't clear context, next step wants the lookup tables
         if table ~= nil then print("QR: genpoly", table.unpack(self.genpoly)) end --desktop only
         print("QR: finished generator polynomial")
         self.progress = self.progress + 1
@@ -542,8 +542,8 @@ function Qr:genframe(instring)
 
     if self.progress == 7 then
         -- append ecc to data buffer
-        if self.resume == nil then
-            self.resume = {blk=0, j=0, k=self.maxlength, y=0}
+        if self.resume.blk == nil then
+            self.resume = {blk=0, j=0, k=self.maxlength, y=0, gexp = self.resume.gexp, glog=self.resume.glog}
         end
         local ctx = self.resume
         for blk = ctx.blk, 1 do
@@ -559,17 +559,17 @@ function Qr:genframe(instring)
                 for id = ctx.id, self.datablkw + blk - 1 do
                     ctx.id = id
                     if getUsage() > 60 then return end
-                    local fb = self:glogLookup(bit32.bxor(self.strinbuf[ctx.y + id], self.strinbuf[ctx.k])) --^
+                    local fb = ctx.glog[1 + bit32.bxor(self.strinbuf[ctx.y + id], self.strinbuf[ctx.k])] --^
                     if fb ~= 255 then     --fb term is non-zero
                         for jd = 1, self.eccblkwid - 1 do
-                            self.strinbuf[ctx.k + jd - 1] = bit32.bxor(self.strinbuf[ctx.k + jd], self:gexpLookup(self:modnn(fb + self.genpoly[self.eccblkwid - jd]))) --^
+                            self.strinbuf[ctx.k + jd - 1] = bit32.bxor(self.strinbuf[ctx.k + jd], ctx.gexp[1 + self:modnn(fb + self.genpoly[self.eccblkwid - jd])]) --^
                         end
                     else
                         for jd = ctx.k, ctx.k + self.eccblkwid - 1 do
                             self.strinbuf[jd] = self.strinbuf[jd + 1]
                         end
                     end
-                    self.strinbuf[ctx.k + self.eccblkwid - 1] = fb == 255 and 0 or self:gexpLookup(self:modnn(fb + self.genpoly[0]))
+                    self.strinbuf[ctx.k + self.eccblkwid - 1] = fb == 255 and 0 or ctx.gexp[1 + self:modnn(fb + self.genpoly[0])]
                 end
                 ctx.id = nil
                 ctx.y = ctx.y + self.datablkw + blk
@@ -581,7 +581,7 @@ function Qr:genframe(instring)
         print("QR: finished appending ecc")
         self.resume = nil
         self.progress = self.progress + 1
-        if (getUsage() > 50) then return end
+        if (getUsage() > 30) then return end
     end
 
     if self.progress == 8 then
@@ -683,11 +683,11 @@ function Qr:genframe(instring)
         -- self.strinbuf = shallowcopy(self.qrframe)
         -- self:applymask(t);
         if self.resume == nil then
-            self.resume = {y = 0}
+            self.resume = 0
         end
         local t = 0 --TODO yes, here's method 0:
-        for y = self.resume.y, self.width - 1 do
-            self.resume.y = y
+        for y = self.resume, self.width - 1 do
+            self.resume = y
             if (getUsage() > 60) then return end
             for x = 0, self.width - 1 do
                 if bit32.band((x + y), 1) == 0 and not self:ismasked(x, y) then
@@ -697,7 +697,6 @@ function Qr:genframe(instring)
         end
         self.resume = nil
         -- x = self.badcheck(); --TODO tim
-
 
         -- add in final mask/ecclevel bytes
         local y = self:fmtwordLookup(bit32.lshift(t + (self.ecclevel - 1), 3))
@@ -812,10 +811,10 @@ end
 if lcd == nil then
     local startTime
     function getUsage()
-        return math.floor((os.clock() - startTime) * 100000)
+        return math.floor((os.clock() - startTime) * 500000)
     end
     print("defined getUsage")
-    for i = 0, 50 do
+    for i = 0, 100 do
         startTime = os.clock()
         if run() == 1 then return end
         repeat until (os.clock() - startTime) > 0.01
