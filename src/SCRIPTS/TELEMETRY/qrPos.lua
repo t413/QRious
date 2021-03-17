@@ -197,28 +197,6 @@ function Qr:fmtwordLookup(i)
     return tbl[i + 1]
 end
 
-
--- Calculate and append ECC data to data block.  Block is in strinbuf, indexes to buffers given.
-function Qr:appendrs(data, dlen, ecbuf, eclen)
-    print("QR appendrs", data, dlen, ecbuf, eclen)
-    for i = 0, eclen - 1 do
-        self.strinbuf[ecbuf + i] = 0
-    end
-    for i = 0, dlen - 1 do
-        local fb = self:glogLookup(bit32.bxor(self.strinbuf[data + i], self.strinbuf[ecbuf])) --^
-        if fb ~= 255 then     --fb term is non-zero
-            for j = 1, eclen - 1 do
-                self.strinbuf[ecbuf + j - 1] = bit32.bxor(self.strinbuf[ecbuf + j], self:gexpLookup(self:modnn(fb + self.genpoly[eclen - j]))) --^
-            end
-        else
-            for j = ecbuf, ecbuf + eclen - 1 do
-                self.strinbuf[j] = self.strinbuf[j + 1]
-            end
-        end
-        self.strinbuf[ ecbuf + eclen - 1] = fb == 255 and 0 or self:gexpLookup(self:modnn(fb + self.genpoly[0]))
-    end
-end
-
 --set bit to indicate cell in qrframe is immutable
 function Qr:setmask(x, y)
     local bt
@@ -558,18 +536,42 @@ function Qr:genframe(instring)
     if self.progress == 7 then
         -- append ecc to data buffer
         if self.resume == nil then
-            self.resume = {i=0, j=0, k=self.maxlength, y=0, a=0}
+            self.resume = {blk=0, j=0, k=self.maxlength, y=0}
         end
+        local ctx = self.resume
         print("neccblk 1 vs 2", self.neccblk1, self.neccblk2)
-        for i = self.resume.i, 1 do
-            for j = self.resume.j, (i == 0 and self.neccblk1 or self.neccblk2) - 1 do
-                print("QR ECC append", i, j, "at", getUsage())
-                self:appendrs(self.resume.y, self.datablkw + i, self.resume.k, self.eccblkwid)
-                self.resume.y = self.resume.y + self.datablkw + i
-                self.resume.k = self.resume.k + self.eccblkwid
-                self.resume.j = j
+        for blk = ctx.blk, 1 do
+            for j = ctx.j, (blk == 0 and self.neccblk1 or self.neccblk2) - 1 do
+                -- Calculate and append ECC data to data block.  Block is in strinbuf, indexes to buffers given.
+                --appendrs function, inlined:
+                if ctx.id == nil then
+                    for id = 0, self.eccblkwid - 1 do
+                        self.strinbuf[ctx.k + id] = 0
+                    end
+                    ctx.id = 0
+                end
+                for id = ctx.id, self.datablkw + blk - 1 do
+                    ctx.id = id
+                    if getUsage() > 60 then return end
+                    print("QR appendrs id", id, j)
+                    local fb = self:glogLookup(bit32.bxor(self.strinbuf[ctx.y + id], self.strinbuf[ctx.k])) --^
+                    if fb ~= 255 then     --fb term is non-zero
+                        for jd = 1, self.eccblkwid - 1 do
+                            self.strinbuf[ctx.k + jd - 1] = bit32.bxor(self.strinbuf[ctx.k + jd], self:gexpLookup(self:modnn(fb + self.genpoly[self.eccblkwid - jd]))) --^
+                        end
+                    else
+                        for jd = ctx.k, ctx.k + self.eccblkwid - 1 do
+                            self.strinbuf[jd] = self.strinbuf[jd + 1]
+                        end
+                    end
+                    self.strinbuf[ctx.k + self.eccblkwid - 1] = fb == 255 and 0 or self:gexpLookup(self:modnn(fb + self.genpoly[0]))
+                end
+                ctx.id = nil
+                ctx.y = ctx.y + self.datablkw + blk
+                ctx.k = ctx.k + self.eccblkwid
+                ctx.j = j
             end
-            self.resume.i = i
+            ctx.blk = blk
         end
         print("QR: finished appending ecc", getUsage())
         self.resume = nil
