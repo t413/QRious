@@ -737,32 +737,59 @@ function Qr:debugDump()
     print("eccblkwid", self.eccblkwid)
 end
 
-local loopc = 0
+local loopc, loopQrStart, loopQrEnd = 0, nil, nil
 local qr, strToMake, renderline
+local qrPxl, qrWidth = 2, 29
 local prefix = "GURU://" --https://maps.google.com/?q=
+local gpsfield = getFieldInfo ~= nil and getFieldInfo("GPS") or nil
+local function getGps()
+    if gpsfield ~= nil then
+        local gps = getValue(gpsfield.id)
+        if type(gps) == "table" and gps.lat ~= nil and gps.lon ~= nil then
+            return string.format("%.5f,%.5f", gps.lat, gps.lon),
+                string.format("%.6f%%2C%.6f", gps.lat, gps.lon)
+        else
+            return "no gps", "?"
+        end
+    else
+        return "no gps sensor", "?"
+    end
+end
 
 local function run(event)
     loopc = loopc + 1
     if lcd ~= nil then
-        local status = ""
-        local location = "?"
-        local gpsfield = getFieldInfo("GPS")
-        if gpsfield ~= nil then
-            local gps = getValue(gpsfield.id)
-            if type(gps) == "table" and gps.lat ~= nil and gps.lon ~= nil then
-                status = string.format("%.6f, %.6f", gps.lat, gps.lon)
-                location = string.format("%.6f%%2C%.6f", gps.lat, gps.lon)
-            else
-                status = "no gps"
-            end
-        else
-            status = "no gps sensor"
+        if qr == nil or not qr.isvalid then lcd.clear() end
+        local status, location = getGps()
+
+        local qrXoffset = math.floor((LCD_W - qrPxl * (qrWidth + 2)) / 2)
+        if renderline == nil and (qr == nil or not qr.isvalid) then
+            lcd.clear()
+            lcd.drawFilledRectangle(qrXoffset, 0, qrPxl * (qrWidth + 2), qrPxl * (qrWidth + 2), ERASE)
         end
+
+        lcd.drawFilledRectangle(0, LCD_H - 8, LCD_W, 8, ERASE)
         lcd.drawText(0, LCD_H - 8, status, SMLSIZE)
+        if loopQrEnd ~= nil then lcd.drawText(LCD_W, LCD_H - 8, string.format("c=%d", loopQrEnd - loopQrStart), SMLSIZE + RIGHT) end
+
         if event == EVT_ENTER_BREAK then
             strToMake = prefix .. location
             if qr == nil then qr = Qr:new(nil) end
             qr:reset()
+            loopQrStart = loopc
+        end
+        if renderline ~= nil then
+            for i = renderline, qr.width - 1 do
+                renderline = i
+                if getUsage() > 70 then return end
+                for j = 0, qrWidth - 1 do
+                    if qr.qrframe[j * qrWidth + i] == 1 then
+                        lcd.drawFilledRectangle(qrXoffset + j * qrPxl + qrPxl, i * qrPxl + qrPxl, qrPxl, qrPxl, FORCE)
+                    end
+                end
+            end
+            print("JUST FINISHED rendering")
+            renderline = nil
         end
     end
 
@@ -774,35 +801,21 @@ local function run(event)
         end
     end
 
+    -- processing loop --
     if qr ~= nil and not qr.isvalid then
         if qr:genframe(strToMake) then
             renderline = 0
+            loopQrEnd = loopc
+            qrWidth = qr.width
+            qrPxl = math.min(math.floor(math.min(LCD_H, LCD_H) / (qrWidth + 2))) --calculate QR pixel size
             print("JUST FINISHED QR")
-            if lcd == nil then printFrame(qr.qrframe, qr.width) end
-            return 1 --ends desktop script
+            if lcd == nil then
+                printFrame(qr.qrframe, qr.width)
+                return 1 --ends desktop script
+            end
         end
         print("QR at frame", loopc, "progress", qr.progress, "load:", getUsage(), qr.isvalid and "valid" or "")
         collectgarbage()
-    else
-        if lcd ~= nil and renderline ~= nil then
-            local pxl = math.floor(math.min(LCD_H, LCD_H) / (qr.width + 2))
-            if renderline == 0 then
-                lcd.clear()
-                -- lcd.drawFilledRectangle(0, 0, pxl * (qr.width + 4), pxl * (qr.width + 4), ERASE)
-            end
-            for i = renderline, qr.width - 1 do
-                renderline = i
-                if getUsage() > 70 then return end
-                for j = 0, qr.width - 1 do
-                    if qr.qrframe[j * qr.width + i] == 1 then
-                        lcd.drawFilledRectangle(i * pxl + pxl, j * pxl + pxl, pxl, pxl, FORCE)
-                    end
-                end
-            end
-            print("JUST FINISHED rendering")
-            renderline = nil
-        end
-        return 1
     end
     return 0
 end
