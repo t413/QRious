@@ -278,7 +278,7 @@ end
 function Qr:genframe(instring)
 
     if self.progress == 0 then
-        print("Qr: begin!")
+        print("Qr: begin on " .. instring)
         self.isvalid = false
         self.progress = self.progress + 1
     end
@@ -291,7 +291,6 @@ function Qr:genframe(instring)
                 self.resume.vsn = vsn
                 return
             end
-            print("vsn", vsn)
             local k = (self.ecclevel - 1) * 4 + (vsn - 1) * 16
             self.neccblk1 = lookup[k + 1]
             k = k + 1
@@ -308,7 +307,7 @@ function Qr:genframe(instring)
         end
         self.resume = nil
         self.width = 17 + 4 * self.version;
-        print("width version", self.width, self.version)
+        print("QR: finished calculating version [" .. tostring(self.version) .. "] and width: " .. tostring(self.width))
 
         self.progress = self.progress + 1
         if (getUsage() > 50) then return end
@@ -737,86 +736,106 @@ function Qr:debugDump()
     print("eccblkwid", self.eccblkwid)
 end
 
-local loopc, loopQrStart, loopQrEnd = 0, nil, nil
-local qr, strToMake, renderline
-local qrPxl, qrWidth = 2, 29
-local prefix = "GURU://" --https://maps.google.com/?q=
+local loopc = 0
+local qrGenerator = nil
+local qr = {
+    str = "", renderline = nil, frame = nil,
+    loopStart = 0, loopEnd = nil, pxlSize = 2, width = 29
+}
+local prefixes = { "geo:", "comgooglemaps://?q=", "GURU://" }
+local prefixIndex = 1
 local gpsfield = getFieldInfo ~= nil and getFieldInfo("GPS") or nil
+
 local function getGps()
     if gpsfield ~= nil then
         local gps = getValue(gpsfield.id)
         if type(gps) == "table" and gps.lat ~= nil and gps.lon ~= nil then
-            return string.format("%.5f,%.5f", gps.lat, gps.lon),
-                string.format("%.6f%%2C%.6f", gps.lat, gps.lon)
+            return string.format("%.6f,%.6f", gps.lat, gps.lon)
         else
-            return "no gps", "?"
+            return "no gps"
         end
     else
-        return "no gps sensor", "?"
+        return "no gps sensor"
     end
 end
 
 local function run(event)
     loopc = loopc + 1
     if lcd ~= nil then
-        if qr == nil or not qr.isvalid then lcd.clear() end
-        local status, location = getGps()
-
-        local qrXoffset = math.floor((LCD_W - qrPxl * (qrWidth + 2)) / 2)
-        if renderline == nil and (qr == nil or not qr.isvalid) then
+        if qrGenerator ~= nil or qr.loopEnd == nil or qr.renderline == 0 then
             lcd.clear()
-            lcd.drawFilledRectangle(qrXoffset, 0, qrPxl * (qrWidth + 2), qrPxl * (qrWidth + 2), ERASE)
+        else
+            lcd.drawFilledRectangle(0, LCD_H - 8, LCD_W, 8, ERASE)
         end
+        local location = getGps()
+        qr.str = prefixes[prefixIndex] .. location
+        --TODO if contains // replace , with %2C
+        local qrXoffset = math.floor((LCD_W - qr.pxlSize * (qr.width + 2)) / 2)
 
-        lcd.drawFilledRectangle(0, LCD_H - 8, LCD_W, 8, ERASE)
-        lcd.drawText(0, LCD_H - 8, status, SMLSIZE)
-        if loopQrEnd ~= nil then lcd.drawText(LCD_W, LCD_H - 8, string.format("c=%d", loopQrEnd - loopQrStart), SMLSIZE + RIGHT) end
+        lcd.drawText(0, LCD_H - 8, qr.str, SMLSIZE)
+        if qrGenerator ~= nil then --draw progress counter
+            lcd.drawGauge(qrXoffset, 20, qr.pxlSize * qr.width, 10, qrGenerator.progress, 10)
+            -- lcd.drawText(LCD_W / 2 - 8, LCD_H / 2 - 10, tostring(qrGenerator.progress))
+        end
+        if qr.loopEnd ~= nil then lcd.drawText(LCD_W, LCD_H - 8, string.format("c=%d", qr.loopEnd - qr.loopStart), SMLSIZE + RIGHT) end
 
         if event == EVT_ENTER_BREAK then
-            strToMake = prefix .. location
-            if qr == nil then qr = Qr:new(nil) end
-            qr:reset()
-            loopQrStart = loopc
+            if (qrGenerator ~= nil) then --already progress?!
+                print("killing in-progress generation")
+                qrGenerator:reset()
+            end
+            qrGenerator = Qr:new(nil)
+            qrGenerator:reset()
+            qr.loopStart = loopc
+        elseif event == EVT_VIRTUAL_INC then
+            prefixIndex = math.min(prefixIndex + 1, #prefixes)
+        elseif event == EVT_VIRTUAL_DEC then
+            prefixIndex = math.max(prefixIndex - 1, 1)
         end
-        if renderline ~= nil then
-            for i = renderline, qr.width - 1 do
-                renderline = i
+        if qr.renderline ~= nil then
+            -- lcd.drawFilledRectangle(qrXoffset, 0, qrXoffset + qr.pxlSize * qr.width, qr.pxlSize * qr.width, ERASE)
+            for i = qr.renderline, qr.width - 1 do
+                qr.renderline = i
                 if getUsage() > 70 then return end
-                for j = 0, qrWidth - 1 do
-                    if qr.qrframe[j * qrWidth + i] == 1 then
-                        lcd.drawFilledRectangle(qrXoffset + j * qrPxl + qrPxl, i * qrPxl + qrPxl, qrPxl, qrPxl, FORCE)
+                for j = 0, qr.width - 1 do
+                    if qr.frame[j * qr.width + i] == 0 then
+                        lcd.drawFilledRectangle(qrXoffset + j * qr.pxlSize + qr.pxlSize, i * qr.pxlSize + qr.pxlSize, qr.pxlSize, qr.pxlSize, FORCE)
                     end
                 end
             end
-            print("JUST FINISHED rendering")
-            renderline = nil
+            print("JUST FINISHED rendering") --only reached if for loop completes
+            qr.renderline = nil
+            qr.frame = nil
         end
     end
 
-    if lcd == nil then
-        if loopc > 100 then return 1 end --desktop test limit
-        if qr == nil then
-            qr = Qr:new(nil)
-            strToMake = "https://maps.google.com/?q=37.858784%2C-122.198935" --http://maps.google.com/?q=  GURU://
+    if lcd == nil then --desktop mode!
+        if loopc > 100 then return 1 end --limit total looping in case there's a bug
+        if qrGenerator == nil then
+            qrGenerator = Qr:new(nil)
+            qr.str = arg[1]
         end
     end
 
     -- processing loop --
-    if qr ~= nil and not qr.isvalid then
-        if qr:genframe(strToMake) then
-            renderline = 0
-            loopQrEnd = loopc
-            qrWidth = qr.width
-            qrPxl = math.min(math.floor(math.min(LCD_H, LCD_H) / (qrWidth + 2))) --calculate QR pixel size
+    if qrGenerator ~= nil then
+        if qrGenerator:genframe(qr.str) then
+            qr.renderline = 0
+            qr.loopEnd = loopc
+            qr.frame = qrGenerator.qrframe --save the qr table, perhaps in future minimize it first
+            qr.width = qrGenerator.width
+            qrGenerator = nil --save memory!
             print("JUST FINISHED QR")
-            if lcd == nil then
-                printFrame(qr.qrframe, qr.width)
+            if lcd ~= nil then
+                qr.pxlSize = math.min(math.floor(math.min(LCD_H, LCD_H) / (qr.width + 2))) --calculate QR pixel size
+            else
+                printFrame(qr.frame, qr.width)
                 return 1 --ends desktop script
             end
         end
         print("QR at frame", loopc, "progress", qr.progress, "load:", getUsage(), qr.isvalid and "valid" or "")
-        collectgarbage()
     end
+    collectgarbage()
     return 0
 end
 
