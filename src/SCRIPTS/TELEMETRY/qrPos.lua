@@ -740,12 +740,13 @@ local loopc = 0
 local qrGenerator = nil
 local qr = {
     str = "", renderline = nil, frame = nil,
-    loopStart = 0, loopEnd = nil, pxlSize = 2, width = 29
+    loopStart = 0, loopEnd = 0, pxlSize = 2, width = 29
 }
-local prefixes = { "geo:", "comgooglemaps://?q=", "GURU://" }
+local prefixes = { "", "geo:", "comgooglemaps://?q=", "GURU://" }
 local prefixIndex = 1
 local clearLCD = true
 local continuous = false
+local continuousFrameInterval = 100
 local gpsfield = getFieldInfo ~= nil and getFieldInfo("GPS") or nil
 
 local function getGps()
@@ -771,8 +772,8 @@ local function run(event)
         end
         local location = getGps()
         local newStr = prefixes[prefixIndex] .. location
-        if newStr ~= qr.str then
-            if continuous and loopc - qr.loopEnd > 20 then
+        if newStr ~= qr.str and qrGenerator == nil then
+            if continuous and (qrGenerator == nil) and ((loopc - qr.loopEnd) > continuousFrameInterval) then
                 event = EVT_ENTER_BREAK  --easy way to start
             end
             qr.str = newStr
@@ -782,10 +783,10 @@ local function run(event)
 
         lcd.drawText(0, LCD_H - 8, qr.str, SMLSIZE)
         if qrGenerator ~= nil then --draw progress counter
-            lcd.drawGauge(qrXoffset, 20, qr.pxlSize * qr.width, 10, qrGenerator.progress, 10)
-            -- lcd.drawText(LCD_W / 2 - 8, LCD_H / 2 - 10, tostring(qrGenerator.progress))
+            lcd.drawFilledRectangle(qrXoffset, (continuous and (LCD_H - 14) or 20), qr.pxlSize * qr.width, 5, ERASE)
+            lcd.drawGauge(qrXoffset, (continuous and (LCD_H - 14) or 20), qr.pxlSize * qr.width, 5, qrGenerator.progress, 10)
         end
-        if qr.loopEnd ~= nil then lcd.drawText(LCD_W, LCD_H - 8, string.format("c=%d", qr.loopEnd - qr.loopStart), SMLSIZE + RIGHT) end
+        if qr.loopEnd ~= 0 then lcd.drawText(LCD_W, LCD_H - 8, string.format("c=%d", qr.loopEnd - qr.loopStart), SMLSIZE + RIGHT) end
 
         if event == EVT_ENTER_BREAK then
             if (qrGenerator == nil) then
@@ -833,12 +834,14 @@ local function run(event)
 
     -- processing loop --
     if qrGenerator ~= nil then
+        clearLCD = not continuous
         if qrGenerator:genframe(qr.str) then
             qr.renderline = 0
             qr.loopEnd = loopc
             qr.frame = qrGenerator.qrframe --save the qr table, perhaps in future minimize it first
             qr.width = qrGenerator.width
             qrGenerator = nil --save memory!
+            clearLCD = true
             print("JUST FINISHED QR")
             if lcd ~= nil then
                 qr.pxlSize = math.min(math.floor(math.min(LCD_H, LCD_H) / (qr.width + 2))) --calculate QR pixel size
@@ -848,7 +851,6 @@ local function run(event)
             end
         end
         print("QR at frame", loopc, "progress", qr.progress, "load:", getUsage(), qr.isvalid and "valid" or "")
-        clearLCD = true
     end
     collectgarbage()
     return 0
