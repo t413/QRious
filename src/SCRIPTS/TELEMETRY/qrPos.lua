@@ -49,7 +49,7 @@ end
 
 function Qr:reset()
     self.strinbuf, self.eccbuf, self.qrframe, self.framask, self.genpoly = {}, {}, {}, {}, {}
-    self.isvalid, self.progress = false, 0
+    self.isvalid, self.progress, self.resume = false, 0, nil
 end
 
 --black to qrframe, white to mask (later black frame merged to mask)
@@ -744,6 +744,8 @@ local qr = {
 }
 local prefixes = { "geo:", "comgooglemaps://?q=", "GURU://" }
 local prefixIndex = 1
+local clearLCD = true
+local continuous = false
 local gpsfield = getFieldInfo ~= nil and getFieldInfo("GPS") or nil
 
 local function getGps()
@@ -762,13 +764,19 @@ end
 local function run(event)
     loopc = loopc + 1
     if lcd ~= nil then
-        if qrGenerator ~= nil or qr.loopEnd == nil or qr.renderline == 0 then
+        if clearLCD then
             lcd.clear()
         else
             lcd.drawFilledRectangle(0, LCD_H - 8, LCD_W, 8, ERASE)
         end
         local location = getGps()
-        qr.str = prefixes[prefixIndex] .. location
+        local newStr = prefixes[prefixIndex] .. location
+        if newStr ~= qr.str then
+            if continuous and loopc - qr.loopEnd > 20 then
+                event = EVT_ENTER_BREAK  --easy way to start
+            end
+            qr.str = newStr
+        end
         --TODO if contains // replace , with %2C
         local qrXoffset = math.floor((LCD_W - qr.pxlSize * (qr.width + 2)) / 2)
 
@@ -780,19 +788,25 @@ local function run(event)
         if qr.loopEnd ~= nil then lcd.drawText(LCD_W, LCD_H - 8, string.format("c=%d", qr.loopEnd - qr.loopStart), SMLSIZE + RIGHT) end
 
         if event == EVT_ENTER_BREAK then
-            if (qrGenerator ~= nil) then --already progress?!
-                print("killing in-progress generation")
-                qrGenerator:reset()
+            if (qrGenerator == nil) then
+                qrGenerator = Qr:new(nil)
             end
-            qrGenerator = Qr:new(nil)
             qrGenerator:reset()
             qr.loopStart = loopc
+        elseif event == EVT_VIRTUAL_MENU then
+            continuous = not continuous
+            print("continuous mode " .. (continuous and "on" or "off"))
+        elseif event == EVT_EXIT_BREAK then
+            clearLCD = true
         elseif event == EVT_VIRTUAL_INC then
             prefixIndex = math.min(prefixIndex + 1, #prefixes)
+            clearLCD = true
         elseif event == EVT_VIRTUAL_DEC then
             prefixIndex = math.max(prefixIndex - 1, 1)
+            clearLCD = true
         end
         if qr.renderline ~= nil then
+            clearLCD = false
             -- lcd.drawFilledRectangle(qrXoffset, 0, qrXoffset + qr.pxlSize * qr.width, qr.pxlSize * qr.width, ERASE)
             for i = qr.renderline, qr.width - 1 do
                 qr.renderline = i
@@ -834,6 +848,7 @@ local function run(event)
             end
         end
         print("QR at frame", loopc, "progress", qr.progress, "load:", getUsage(), qr.isvalid and "valid" or "")
+        clearLCD = true
     end
     collectgarbage()
     return 0
