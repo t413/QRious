@@ -21,23 +21,22 @@ local function shallowcopy(orig)
 end
 
 Qr = {
-    strinbuf = {},
-    eccbuf   = {},
-    qrframe  = {},
-    framask  = {}, --is masked lookup
-    rlens    = {},
-    genpoly  = {},
-    ecclevel=1,
-    version=0,
-    width=0,
-    neccblk1  =0,
-    neccblk2  =0,
-    datablkw  =0,
-    eccblkwid =0,
+    strinbuf  = {},
+    eccbuf    = {},
+    qrframe   = {},
+    framask   = {}, --is masked lookup
+    genpoly   = {},
+    ecclevel  = 1,
+    version   = 0,
+    width     = 0,
+    neccblk1  = 0,
+    neccblk2  = 0,
+    datablkw  = 0,
+    eccblkwid = 0,
     maxlength = nil,
-    isvalid   =false,
-    progress  =0,
-    resume = nil --continuation data store
+    isvalid   = false,
+    progress  = 0,
+    resume    = nil --continuation data store
 }
 
 function Qr:new(o)
@@ -54,12 +53,12 @@ end
 
 --black to qrframe, white to mask (later black frame merged to mask)
 function Qr:putalign(x, y)
-    self.qrframe[x + self.width * y] = 1
+    self.qrframe[x + self.width * y] = true
     for j = -2, 2 - 1 do
-        self.qrframe[(x + j)     + self.width * (y - 2    )] = 1;
-        self.qrframe[(x - 2)     + self.width * (y + j + 1)] = 1;
-        self.qrframe[(x + 2)     + self.width * (y + j    )] = 1;
-        self.qrframe[(x + j + 1) + self.width * (y + 2    )] = 1;
+        self.qrframe[(x + j)     + self.width * (y - 2    )] = true;
+        self.qrframe[(x - 2)     + self.width * (y + j + 1)] = true;
+        self.qrframe[(x + 2)     + self.width * (y + j    )] = true;
+        self.qrframe[(x + j + 1) + self.width * (y + 2    )] = true;
     end
     for j = 0, 2 - 1 do
         self:setmask(x - 1, y + j);
@@ -140,7 +139,7 @@ function Qr:setmask(x, y)
     end
     -- y*y = 1+3+5...
     bt = bit32.rshift((y * y) + y, 1) + x
-    self.framask[bt] = 1
+    self.framask[bt] = true
 end
 
 -- check mask - since symmetrical use half
@@ -152,7 +151,11 @@ function Qr:ismasked(x, y)
         y = bt
     end
     bt = bit32.rshift((y * y) + y, 1) + x
-    return self.framask[bt] > 0
+    return self.framask[bt] == true
+end
+
+local function xorEqls(table, index, value)
+    table[index] = (table[index] ~= true) and true or nil
 end
 
 -- Apply the selected mask out of the 8.
@@ -161,7 +164,7 @@ function Qr:applymask(m)
         for y = 0, self.width - 1 do
             for x = 0, self.width - 1 do
                 if bit32.band((x + y), 1) == 0 and not self:ismasked(x, y) then
-                    self.qrframe[x + y * self.width] = bit32.bxor(self.qrframe[x + y * self.width], 1) --^
+                    xorEqls(self.qrframe, x + y * self.width) --^
                 end
             end
         end
@@ -169,7 +172,7 @@ function Qr:applymask(m)
         for y = 0, self.width - 1 do
             for x = 0, self.width - 1 do
                 if bit32.band(y, 1) == 0 and not self:ismasked(x, y) then
-                    self.qrframe[x + y * self.width] = bit32.bxor(self.qrframe[x + y * self.width], 1) --^
+                    xorEqls(self.qrframe, x + y * self.width) --^
                 end
             end
         end
@@ -179,27 +182,11 @@ function Qr:applymask(m)
             for x = 0, self.width - 1 do
                 if rx == 3 then rx = 0 end
                 if not rx and not self:ismasked(x, y) then
-                    self.qrframe[x + y * self.width] = bit32.bxor(self.qrframe[x + y * self.width], 1) --^
+                    xorEqls(self.qrframe, x + y * self.width) --^
                 end
                 rx = rx + 1
             end
         end
-    end
-end
-
-local function printFrame(buffer, width, back, fill)
-    back = back or "  "
-    fill = fill or "##"
-    for i = -3, width + 2 do
-        local line = ""
-        for j = 0, width - 1 do
-            if i < 0 or i >= width then
-                line = line .. back
-            else
-                line = line .. ((buffer[j * width + i] == 1) and fill or back)
-            end
-        end
-        print(i, back .. back .. back .. line .. back .. back .. back)
     end
 end
 
@@ -248,13 +235,9 @@ function Qr:genframe(instring)
             self.eccbuf[t] = 0
         end
 
-        for t = 0, self.width * self.width - 1 do
-            self.qrframe[t] = 0
-        end
-
-        for t = 0, (self.width * (self.width + 1) + 1) / 2 - 1 do
-            self.framask[t] = 0
-        end
+        -- don't pre-allocate anymore: leave sparse to use less memory
+        -- for t = 0, self.width * self.width - 1 do self.qrframe[t] = 0 end
+        -- for t = 0, (self.width * (self.width + 1) + 1) / 2 - 1 do self.framask[t] = nil end
         print("QR: finished allocate")
 
         self.progress = self.progress + 1
@@ -268,12 +251,12 @@ function Qr:genframe(instring)
             local y = 0;
             if t == 1 then k = (self.width - 7) end
             if t == 2 then y = (self.width - 7) end
-            self.qrframe[(y + 3) + self.width * (k + 3)] = 1
+            self.qrframe[(y + 3) + self.width * (k + 3)] = true
             for x = 0, 5 do
-                self.qrframe[(y + x) + self.width * k] = 1
-                self.qrframe[y + self.width * (k + x + 1)] = 1
-                self.qrframe[(y + 6) + self.width * (k + x)] = 1
-                self.qrframe[(y + x + 1) + self.width * (k + 6)] = 1
+                self.qrframe[(y + x) + self.width * k]           = true
+                self.qrframe[y + self.width * (k + x + 1)]       = true
+                self.qrframe[(y + 6) + self.width * (k + x)]     = true
+                self.qrframe[(y + x + 1) + self.width * (k + 6)] = true
             end
             for x = 1, 4 do
                 self:setmask(y + x, k + 1)
@@ -282,10 +265,10 @@ function Qr:genframe(instring)
                 self:setmask(y + x + 1, k + 5)
             end
             for x = 2, 3 do
-                self.qrframe[(y + x) + self.width * (k + 2)] = 1
-                self.qrframe[(y + 2) + self.width * (k + x + 1)] = 1
-                self.qrframe[(y + 4) + self.width * (k + x)] = 1
-                self.qrframe[(y + x + 1) + self.width * (k + 4)] = 1
+                self.qrframe[(y + x) + self.width * (k + 2)]     = true
+                self.qrframe[(y + 2) + self.width * (k + x + 1)] = true
+                self.qrframe[(y + 4) + self.width * (k + x)]     = true
+                self.qrframe[(y + x + 1) + self.width * (k + 4)] = true
             end
         end
 
@@ -310,7 +293,7 @@ function Qr:genframe(instring)
 
     if self.progress == 4 then
         -- single black
-        self.qrframe[8 + self.width * (self.width - 8)] = 1
+        self.qrframe[8 + self.width * (self.width - 8)] = true
 
         -- timing gap - mask only
         for y = 0, 6 do
@@ -342,8 +325,8 @@ function Qr:genframe(instring)
                 self:setmask(8 + x, 6)
                 self:setmask(6, 8 + x)
             else
-                self.qrframe[(8 + x) + self.width * 6] = 1
-                self.qrframe[6 + self.width * (8 + x)] = 1
+                self.qrframe[(8 + x) + self.width * 6] = true
+                self.qrframe[6 + self.width * (8 + x)] = true
             end
         end
 
@@ -354,8 +337,8 @@ function Qr:genframe(instring)
             for x = 0, 5 do
                 for y = 0, 2 do -- and k--
                     if bit32.band(1, (k > 11 and bit32.rshift(self.version, (k - 12)) or bit32.rshift(t, k))) == 1 then
-                        self.qrframe[(5 - x) + self.width * (2 - y + self.width - 11)] = 1
-                        self.qrframe[(2 - y + self.width - 11) + self.width * (5 - x)] = 1
+                        self.qrframe[(5 - x) + self.width * (2 - y + self.width - 11)] = true
+                        self.qrframe[(2 - y + self.width - 11) + self.width * (5 - x)] = true
                     else
                         self:setmask(5 - x, 2 - y + self.width - 11)
                         self:setmask(2 - y + self.width - 11, 5 - x)
@@ -368,7 +351,7 @@ function Qr:genframe(instring)
         -- sync mask bits - only set above for white spaces, so add in black bits
         for y = 0, self.width - 1 do
             for x = 0, y do --inclusive
-                if self.qrframe[x + self.width * y] == 1 then
+                if self.qrframe[x + self.width * y] == true then
                     self:setmask(x, y)
                 end
             end
@@ -558,7 +541,7 @@ function Qr:genframe(instring)
             local t = self.strinbuf[i]
             for j = 0, 7 do
                 if bit32.band(0x80, t) >= 1 then
-                    self.qrframe[ctx.x + self.width * ctx.y] = 1
+                    self.qrframe[ctx.x + self.width * ctx.y] = true
                 end
                 while true do   -- find next fill position
                     if ctx.v then
@@ -618,7 +601,7 @@ function Qr:genframe(instring)
             if (getUsage() > 60) then return end
             for x = 0, self.width - 1 do
                 if bit32.band((x + y), 1) == 0 and not self:ismasked(x, y) then
-                    self.qrframe[x + y * self.width] = bit32.bxor(self.qrframe[x + y * self.width], 1) --^
+                    xorEqls(self.qrframe, x + y * self.width) --^
                 end
             end
         end
@@ -630,16 +613,16 @@ function Qr:genframe(instring)
         -- low byte
         for bit = 0, 7 do
             if bit32.band(y, 1) == 1 then
-                self.qrframe[(self.width - 1 - bit) + self.width * 8] = 1
-                self.qrframe[8 + self.width * (bit + (bit < 6 and 0 or 1))] = 1
+                self.qrframe[(self.width - 1 - bit) + self.width * 8] = true
+                self.qrframe[8 + self.width * (bit + (bit < 6 and 0 or 1))] = true
             end
             y = bit32.rshift(y, 1)
         end
         -- high byte
         for bit = 0, 6 do
             if bit32.band(y, 1) == 1 then
-                self.qrframe[8 + self.width * (self.width - 7 + bit)] = 1
-                self.qrframe[((bit >= 1) and (6 - bit) or 7) + self.width * 8] = 1
+                self.qrframe[8 + self.width * (self.width - 7 + bit)] = true
+                self.qrframe[((bit >= 1) and (6 - bit) or 7) + self.width * 8] = true
             end
             y = bit32.rshift(y, 1)
         end
@@ -651,17 +634,6 @@ function Qr:genframe(instring)
         self.isvalid = true
         return self.isvalid
     end
-end
-
-function Qr:debugDump()
-    print("frame:")
-    printFrame(self.qrframe, self.width)
-    print("mask:")
-    printFrame(self.framask, 16)
-    print("eccbuf", table.unpack(self.eccbuf))
-    print("strinbuf", table.unpack(self.strinbuf))
-    print("genpoly", table.unpack(self.genpoly))
-    print("eccblkwid", self.eccblkwid)
 end
 
 local loopc = 0
@@ -741,7 +713,7 @@ local function run(event)
                 qr.renderline = i
                 if getUsage() > 70 then return end
                 for j = 0, qr.width - 1 do
-                    if qr.frame[j * qr.width + i] == 0 then
+                    if qr.frame[j * qr.width + i] == true then
                         lcd.drawFilledRectangle(qrXoffset + j * qr.pxlSize + qr.pxlSize, i * qr.pxlSize + qr.pxlSize, qr.pxlSize, qr.pxlSize, FORCE)
                     end
                 end
@@ -756,7 +728,22 @@ local function run(event)
         if loopc > 100 then return 1 end --limit total looping in case there's a bug
         if qrGenerator == nil then
             qrGenerator = Qr:new(nil)
-            qr.str = arg[1]
+            qr.str = arg[1] or "hello world"
+        end
+        function printFrame(buffer, width, back, fill)
+            back = back or "  "
+            fill = fill or "##"
+            for i = -3, width + 2 do
+                local line = ""
+                for j = 0, width - 1 do
+                    if i < 0 or i >= width then
+                        line = line .. back
+                    else
+                        line = line .. ((buffer[j * width + i] == true) and fill or back)
+                    end
+                end
+                print(i, back .. back .. back .. line .. back .. back .. back)
+            end
         end
     end
 
@@ -775,6 +762,7 @@ local function run(event)
                 qr.pxlSize = math.min(math.floor(math.min(LCD_H, LCD_H) / (qr.width + 2))) --calculate QR pixel size
             else
                 printFrame(qr.frame, qr.width)
+                print("finished with usage:", getUsage(), "loops:", loopc)
                 return 1 --ends desktop script
             end
         end
