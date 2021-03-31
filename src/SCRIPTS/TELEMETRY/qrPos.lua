@@ -708,17 +708,13 @@ local function run(event)
         end
         if qr.renderline ~= nil then
             clearLCD = false
-            -- lcd.drawFilledRectangle(qrXoffset, 0, qrXoffset + qr.pxlSize * qr.width, qr.pxlSize * qr.width, ERASE)
-            for i = qr.renderline, qr.width - 1 do
-                qr.renderline = i
-                if getUsage() > 70 then return end
-                for j = 0, qr.width - 1 do
-                    if qr.frame[j * qr.width + i] == true then
-                        lcd.drawFilledRectangle(qrXoffset + j * qr.pxlSize + qr.pxlSize, i * qr.pxlSize + qr.pxlSize, qr.pxlSize, qr.pxlSize, FORCE)
-                    end
+            lcd.drawFilledRectangle(qrXoffset, 0, qrXoffset + qr.pxlSize * qr.width, qr.pxlSize * qr.width, ERASE)
+            for idx, value in pairs(qr.frame) do
+                if (value == true) then
+                    lcd.drawFilledRectangle(qrXoffset + idx % qr.width * qr.pxlSize + qr.pxlSize, math.floor(idx / qr.width) * qr.pxlSize + qr.pxlSize, qr.pxlSize, qr.pxlSize, FORCE)
                 end
             end
-            print("JUST FINISHED rendering") --only reached if for loop completes
+            print("JUST FINISHED rendering", getUsage()) --only reached if for loop completes
             qr.renderline = nil
             qr.frame = nil
         end
