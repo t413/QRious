@@ -34,8 +34,9 @@ Qr = {
     datablkw  = 0,
     eccblkwid = 0,
     maxlength = nil,
+    inputstr  = "",
     isvalid   = false,
-    progress  = 0,
+    progress  = nil,
     resume    = nil --continuation data store
 }
 
@@ -43,12 +44,27 @@ function Qr:new(o)
     o = o or {}
     setmetatable(o, self)
     self.__index = self
+    self:reset()
     return o
 end
 
-function Qr:reset()
-    self.isvalid, self.progress, self.resume = false, 0, nil
-    self.strinbuf, self.eccbuf, self.frame, self.framask, self.genpoly = {}, {}, {}, {}, {}
+function Qr:start(str)
+    self:reset()
+    self.inputstr = str
+    self.progress = 0
+end
+
+function Qr:isRunning()
+    return self.progress ~= nil
+end
+
+function Qr:reset(partial)
+    self.strinbuf, self.eccbuf, self.framask, self.genpoly = {}, {}, {}, {}
+    self.isvalid, self.progress, self.resume = false, nil, nil
+    if partial == nil then
+        self.frame, self.width = {}, 0
+        print("Qr: full reset")
+    end
 end
 
 --black to qrframe, white to mask (later black frame merged to mask)
@@ -191,11 +207,10 @@ function Qr:applymask(m)
 end
 
 --Generate QR frame array
-function Qr:genframe(instring)
+function Qr:genframe()
 
     if self.progress == 0 then
-        print("Qr: begin on " .. instring)
-        self.isvalid = false
+        print("Qr: begin on " .. self.inputstr)
         self.progress = self.progress + 1
     end
     if self.progress == 1 then
@@ -215,14 +230,14 @@ function Qr:genframe(instring)
             k = k + 1
             self.eccblkwid = self:eccblocksLookup(k + 1)
             k = self.datablkw * (self.neccblk1 + self.neccblk2) + self.neccblk2 - 3 + (self.version <= 9 and 1 or 0)
-            if #instring <= k then
+            if #self.inputstr <= k then
                 self.version = vsn
                 break
             end
         end
         self.resume = nil
         self.width = 17 + 4 * self.version;
-        print("QR: finished calculating version [" .. tostring(self.version) .. "] and width: " .. tostring(self.width))
+        print(string.format("QR: finished calculating version [%d] width [%d] from data len [%d]", self.version, self.width, #self.inputstr))
 
         self.progress = self.progress + 1
         if (getUsage() > 50) then return end
@@ -365,12 +380,12 @@ function Qr:genframe(instring)
     if self.progress == 5 then
         -- convert string to bitstream
         -- 8 bit data to QR-coded 8 bit data (numeric or alphanum, or kanji not supported)
-        local v = #instring
+        local v = #self.inputstr
 
         -- string to array
         for i = 0, v - 1 do --we'll force lua tables to use 0-start addressing
-            self.eccbuf[i] = string.byte(instring, i + 1) --adjust for 1-based lua stdlib numbering
-            self.strinbuf[i] = string.byte(instring, i + 1)
+            self.eccbuf[i] = string.byte(self.inputstr, i + 1) --adjust for 1-based lua stdlib numbering
+            self.strinbuf[i] = string.byte(self.inputstr, i + 1)
         end
 
         -- calculate max string length
@@ -628,28 +643,40 @@ function Qr:genframe(instring)
         end
         print("QR: finished adding final ecc/level info")
         self.progress = 0
-        local back = self.frame
-        self:reset()
-        self.frame = back
+        self:reset(true) --partial reset, don't reset frame & width
         self.isvalid = true
         return self.isvalid
     end
 end
 
+function Qr:draw(x, y, pxlSize, bgFlags, fgFlags)
+    if lcd == nil then return end
+    pxlSize = pxlSize or 2
+	lcd.drawFilledRectangle(x, y, (self.width + 2) * pxlSize, (self.width + 2) * pxlSize, bgFlags or ERASE)
+	for idx, value in pairs(self.frame) do
+		if (value == true) then
+			lcd.drawFilledRectangle(x + idx % self.width * pxlSize + pxlSize, y + math.floor(idx / self.width) * pxlSize + pxlSize, pxlSize, pxlSize, fgFlags or CUSTOM_COLOR)
+		end
+	end
+end
+
 local loopc = 0
-local qrGenerator = nil
-local qr = {
-    str = "", renderline = nil, frame = nil,
-    loopStart = 0, loopEnd = 0, pxlSize = 2, width = 29
+local ctx = {
+    loopStart = 0, loopEnd = 0,
+    pxlSize = 2,
+    qr = nil
 }
 local prefixes = { "", "geo:", "comgooglemaps://?q=", "GURU://" }
 local prefixIndex = 1
-local clearLCD = true
+local doRedraw = true
 local continuous = false
 local continuousFrameInterval = 100
-local gpsfield = getFieldInfo ~= nil and getFieldInfo("GPS") or nil
+local gpsfield = nil
 
 local function getGps()
+    if gpsfield == nil then
+        gpsfield = getFieldInfo("GPS")
+    end
     if gpsfield ~= nil then
         local gps = getValue(gpsfield.id)
         if type(gps) == "table" and gps.lat ~= nil and gps.lon ~= nil then
@@ -662,69 +689,66 @@ local function getGps()
     end
 end
 
+local function init()
+    ctx.qr = Qr:new() --creates instance from prototype
+    Qr = nil --delete prototype
+end
+
+local function background()
+    print("Qr: bg fn")
+end
+
 local function run(event)
     loopc = loopc + 1
     if lcd ~= nil then
-        if clearLCD then
+        if doRedraw then
             lcd.clear()
         else
             lcd.drawFilledRectangle(0, LCD_H - 8, LCD_W, 8, ERASE)
         end
         local location = getGps()
         local newStr = prefixes[prefixIndex] .. location
-        if newStr ~= qr.str and qrGenerator == nil then
-            if continuous and (qrGenerator == nil) and ((loopc - qr.loopEnd) > continuousFrameInterval) then
-                event = EVT_ENTER_BREAK  --easy way to start
+        if newStr ~= ctx.qr.inputstr and ctx.qr.progress == 0 then
+            if continuous and not ctx.qr:isRunning() and ((loopc - ctx.loopEnd) > continuousFrameInterval) then
+                ctx.qr:start(newStr)
             end
-            qr.str = newStr
         end
         --TODO if contains // replace , with %2C
         local qrXoffset = math.floor((LCD_W - qr.pxlSize * (qr.width + 2)) / 2)
 
         lcd.drawText(0, LCD_H - 8, qr.str, SMLSIZE)
-        if qrGenerator ~= nil then --draw progress counter
+        if ctx.qr:isRunning() then --draw progress bar
             lcd.drawFilledRectangle(qrXoffset, (continuous and (LCD_H - 14) or 20), qr.pxlSize * qr.width, 5, ERASE)
             lcd.drawGauge(qrXoffset, (continuous and (LCD_H - 14) or 20), qr.pxlSize * qr.width, 5, qrGenerator.progress, 10)
         end
         if qr.loopEnd ~= 0 then lcd.drawText(LCD_W, LCD_H - 8, string.format("c=%d", qr.loopEnd - qr.loopStart), SMLSIZE + RIGHT) end
 
         if event == EVT_ENTER_BREAK then
-            if (qrGenerator == nil) then
-                qrGenerator = Qr:new(nil)
-            end
-            qrGenerator:reset()
-            qr.loopStart = loopc
+            ctx.qr:start(newStr)
+            ctx.loopStart = loopc
         elseif event == EVT_VIRTUAL_MENU then
             continuous = not continuous
             print("continuous mode " .. (continuous and "on" or "off"))
         elseif event == EVT_EXIT_BREAK then
-            clearLCD = true
+            doRedraw = true
         elseif event == EVT_VIRTUAL_INC then
             prefixIndex = math.min(prefixIndex + 1, #prefixes)
-            clearLCD = true
+            doRedraw = true
         elseif event == EVT_VIRTUAL_DEC then
             prefixIndex = math.max(prefixIndex - 1, 1)
-            clearLCD = true
+            doRedraw = true
         end
-        if qr.renderline ~= nil then
-            clearLCD = false
-            lcd.drawFilledRectangle(qrXoffset, 0, qrXoffset + qr.pxlSize * qr.width, qr.pxlSize * qr.width, ERASE)
-            for idx, value in pairs(qr.frame) do
-                if (value == true) then
-                    lcd.drawFilledRectangle(qrXoffset + idx % qr.width * qr.pxlSize + qr.pxlSize, math.floor(idx / qr.width) * qr.pxlSize + qr.pxlSize, qr.pxlSize, qr.pxlSize, FORCE)
-                end
-            end
+        if doRedraw and ctx.qr.isvalid then
+            doRedraw = false
+            ctx.qr:draw(qrXoffset, 0, ctx.pxlSize)
             print("JUST FINISHED rendering", getUsage()) --only reached if for loop completes
-            qr.renderline = nil
-            qr.frame = nil
         end
     end
 
     if lcd == nil then --desktop mode!
         if loopc > 100 then return 1 end --limit total looping in case there's a bug
-        if qrGenerator == nil then
-            qrGenerator = Qr:new(nil)
-            qr.str = arg[1] or "hello world"
+        if ctx.qr.progress == nil then
+            ctx.qr:start(arg[1] or "hello world")
         end
         function printFrame(buffer, width, back, fill)
             back = back or "  "
@@ -744,25 +768,21 @@ local function run(event)
     end
 
     -- processing loop --
-    if qrGenerator ~= nil then
-        clearLCD = not continuous
-        if qrGenerator:genframe(qr.str) then
-            qr.renderline = 0
-            qr.loopEnd = loopc
-            qr.frame = qrGenerator.frame --save the qr table, perhaps in future minimize it first
-            qr.width = qrGenerator.width
-            qrGenerator = nil --save memory!
-            clearLCD = true
+    if ctx.qr:isRunning() then
+        doRedraw = not continuous
+        if ctx.qr:genframe() then
+            ctx.loopEnd = loopc
+            doRedraw = true
             print("JUST FINISHED QR")
             if lcd ~= nil then
-                qr.pxlSize = math.min(math.floor(math.min(LCD_H, LCD_H) / (qr.width + 2))) --calculate QR pixel size
+                ctx.pxlSize = math.min(math.floor(math.min(LCD_H, LCD_H) / (ctx.qr.width + 2))) --calculate QR pixel size
             else
-                printFrame(qr.frame, qr.width)
+                printFrame(ctx.qr.frame, ctx.qr.width)
                 print("finished with usage:", getUsage(), "loops:", loopc)
                 return 1 --ends desktop script
             end
         end
-        print("QR at frame", loopc, "progress", qr.progress, "load:", getUsage(), qr.isvalid and "valid" or "")
+        print("QR at frame", loopc, "progress", ctx.qr.progress, "load:", getUsage(), ctx.qr.isvalid and "valid" or "")
     end
     collectgarbage()
     return 0
@@ -774,7 +794,7 @@ if lcd == nil then
     function getUsage()
         return math.floor((os.clock() - startTime) * 500000)
     end
-    print("defined getUsage")
+    init()
     for i = 0, 100 do
         startTime = os.clock()
         if run() == 1 then return end
@@ -783,4 +803,4 @@ if lcd == nil then
     print("end running")
 end
 
-return { run = run }
+return { init=init, run = run, background=background, qr=Qr, getGps=getGps }
