@@ -427,9 +427,9 @@ function Qr:genframe(instring)
             self.genpoly[0] = 1;
             self.resume = {i=0, j=0} --j for 2nd loop below
         end
-        local ctx = self.resume
-        for i = ctx.i, self.eccblkwid - 1 do
-            ctx.i = i
+        local tmp = self.resume
+        for i = tmp.i, self.eccblkwid - 1 do
+            tmp.i = i
             if getUsage() > 40 then return end
             self.genpoly[i + 1] = 1;
             for j = i, 1, -1 do
@@ -437,9 +437,9 @@ function Qr:genframe(instring)
             end
             self.genpoly[0] = self:gexpLookup(1 + self:modnn(self:glogLookup(1 + self.genpoly[0]) + i))
         end
-        ctx.i = ctx.i + 1 --increment once more
-        for j = ctx.j, self.eccblkwid do --inclusive
-            ctx.j = j
+        tmp.i = tmp.i + 1 --increment once more
+        for j = tmp.j, self.eccblkwid do --inclusive
+            tmp.j = j
             if getUsage() > 40 then return end
             self.genpoly[j] = self:glogLookup(1 + self.genpoly[j]); -- use logs for genpoly[] to save calc step
         end
@@ -455,38 +455,38 @@ function Qr:genframe(instring)
         if self.resume.blk == nil then
             self.resume = {blk=0, j=0, k=self.maxlength, y=0}
         end
-        local ctx = self.resume
-        for blk = ctx.blk, 1 do
-            for j = ctx.j, (blk == 0 and self.neccblk1 or self.neccblk2) - 1 do
+        local tmp = self.resume
+        for blk = tmp.blk, 1 do
+            for j = tmp.j, (blk == 0 and self.neccblk1 or self.neccblk2) - 1 do
                 -- Calculate and append ECC data to data block.  Block is in strinbuf, indexes to buffers given.
                 --appendrs function, inlined:
-                if ctx.id == nil then
+                if tmp.id == nil then
                     for id = 0, self.eccblkwid - 1 do
-                        self.strinbuf[ctx.k + id] = 0
+                        self.strinbuf[tmp.k + id] = 0
                     end
-                    ctx.id = 0
+                    tmp.id = 0
                 end
-                for id = ctx.id, self.datablkw + blk - 1 do
-                    ctx.id = id
+                for id = tmp.id, self.datablkw + blk - 1 do
+                    tmp.id = id
                     if getUsage() > 60 then return end
-                    local fb = self:glogLookup(1 + bit32.bxor(self.strinbuf[ctx.y + id], self.strinbuf[ctx.k])) --^
+                    local fb = self:glogLookup(1 + bit32.bxor(self.strinbuf[tmp.y + id], self.strinbuf[tmp.k])) --^
                     if fb ~= 255 then     --fb term is non-zero
                         for jd = 1, self.eccblkwid - 1 do
-                            self.strinbuf[ctx.k + jd - 1] = bit32.bxor(self.strinbuf[ctx.k + jd], self:gexpLookup(1 + self:modnn(fb + self.genpoly[self.eccblkwid - jd]))) --^
+                            self.strinbuf[tmp.k + jd - 1] = bit32.bxor(self.strinbuf[tmp.k + jd], self:gexpLookup(1 + self:modnn(fb + self.genpoly[self.eccblkwid - jd]))) --^
                         end
                     else
-                        for jd = ctx.k, ctx.k + self.eccblkwid - 1 do
+                        for jd = tmp.k, tmp.k + self.eccblkwid - 1 do
                             self.strinbuf[jd] = self.strinbuf[jd + 1]
                         end
                     end
-                    self.strinbuf[ctx.k + self.eccblkwid - 1] = fb == 255 and 0 or self:gexpLookup(1 + self:modnn(fb + self.genpoly[0]))
+                    self.strinbuf[tmp.k + self.eccblkwid - 1] = fb == 255 and 0 or self:gexpLookup(1 + self:modnn(fb + self.genpoly[0]))
                 end
-                ctx.id = nil
-                ctx.y = ctx.y + self.datablkw + blk
-                ctx.k = ctx.k + self.eccblkwid
-                ctx.j = j
+                tmp.id = nil
+                tmp.y = tmp.y + self.datablkw + blk
+                tmp.k = tmp.k + self.eccblkwid
+                tmp.j = j
             end
-            ctx.blk = blk
+            tmp.blk = blk
         end
         print("QR: finished appending ecc")
         self.resume = nil
@@ -531,7 +531,7 @@ function Qr:genframe(instring)
         if self.resume == nil then
             self.resume = {x = self.width - 1, y = self.width - 1, v = true, k = true, i = 0}
         end
-        local ctx = self.resume --shorter name..
+        local tmp = self.resume --shorter name..
         -- inteleaved data and ecc codes
         local m = (self.datablkw + self.eccblkwid) * (self.neccblk1 + self.neccblk2) + self.neccblk2;
         for i = self.resume.i, m - 1 do
@@ -541,39 +541,39 @@ function Qr:genframe(instring)
             local t = self.strinbuf[i]
             for j = 0, 7 do
                 if bit32.band(0x80, t) >= 1 then
-                    self.frame[ctx.x + self.width * ctx.y] = true
+                    self.frame[tmp.x + self.width * tmp.y] = true
                 end
                 while true do   -- find next fill position
-                    if ctx.v then
-                        ctx.x = ctx.x - 1
+                    if tmp.v then
+                        tmp.x = tmp.x - 1
                     else
-                        ctx.x = ctx.x + 1
-                        if ctx.k then
-                            if ctx.y ~= 0 then
-                                ctx.y = ctx.y - 1
+                        tmp.x = tmp.x + 1
+                        if tmp.k then
+                            if tmp.y ~= 0 then
+                                tmp.y = tmp.y - 1
                             else
-                                ctx.x = ctx.x - 2;
-                                ctx.k = not ctx.k;
-                                if ctx.x == 6 then
-                                    ctx.x = ctx.x - 1
-                                    ctx.y = 9;
+                                tmp.x = tmp.x - 2;
+                                tmp.k = not tmp.k;
+                                if tmp.x == 6 then
+                                    tmp.x = tmp.x - 1
+                                    tmp.y = 9;
                                 end
                             end
                         else
-                            if ctx.y ~= (self.width - 1) then
-                                ctx.y = ctx.y + 1
+                            if tmp.y ~= (self.width - 1) then
+                                tmp.y = tmp.y + 1
                             else
-                                ctx.x = ctx.x - 2
-                                ctx.k = not ctx.k
-                                if ctx.x == 6 then
-                                    ctx.x = ctx.x - 1
-                                    ctx.y = ctx.y - 8;
+                                tmp.x = tmp.x - 2
+                                tmp.k = not tmp.k
+                                if tmp.x == 6 then
+                                    tmp.x = tmp.x - 1
+                                    tmp.y = tmp.y - 8;
                                 end
                             end
                         end
                     end
-                    ctx.v = not ctx.v;
-                    if not self:ismasked(ctx.x, ctx.y) then
+                    tmp.v = not tmp.v;
+                    if not self:ismasked(tmp.x, tmp.y) then
                         break
                     end
                 end
