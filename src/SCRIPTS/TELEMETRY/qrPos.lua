@@ -432,7 +432,8 @@ function Qr:genframe()
         end
         print("QR: finished bitstream")
         self.progress = self.progress + 1
-        if (getUsage() > 10) then return end
+        collectgarbage()
+        if (getUsage() > 50) then return end
     end
 
     if self.progress == 6 then
@@ -462,6 +463,7 @@ function Qr:genframe()
         if table ~= nil then print("QR: genpoly", table.unpack(self.genpoly)) end --desktop only
         print("QR: finished generator polynomial")
         self.progress = self.progress + 1
+        collectgarbage()
         if (getUsage() > 50) then return end
     end
 
@@ -506,7 +508,8 @@ function Qr:genframe()
         print("QR: finished appending ecc")
         self.resume = nil
         self.progress = self.progress + 1
-        if (getUsage() > 30) then return end
+        collectgarbage()
+        if (getUsage() > 50) then return end
     end
 
     if self.progress == 8 then
@@ -598,7 +601,8 @@ function Qr:genframe()
         print("QR: finished packing")
         self.resume = nil
         self.progress = self.progress + 1
-        if (getUsage() > 20) then return end
+        collectgarbage()
+        if (getUsage() > 50) then return end
     end
 
     if self.progress == 10 then
@@ -642,6 +646,7 @@ function Qr:genframe()
             y = bit32.rshift(y, 1)
         end
         print("QR: finished adding final ecc/level info")
+        collectgarbage()
         self.progress = 0
         self:reset(true) --partial reset, don't reset frame & width
         self.isvalid = true
@@ -672,6 +677,7 @@ local doRedraw = true
 local continuous = false
 local continuousFrameInterval = 100
 local gpsfield = nil
+local lastBGloopc = 0
 
 local function getGps()
     if gpsfield == nil then
@@ -695,7 +701,12 @@ local function init()
 end
 
 local function background()
-    print("Qr: bg fn")
+    if lastBGloopc == loopc and not doRedraw then
+        print("Qr: backgrounded!")
+        doRedraw = true
+        ctx.qr:reset()
+    end
+    lastBGloopc = loopc
 end
 
 local function run(event)
@@ -714,14 +725,14 @@ local function run(event)
             end
         end
         --TODO if contains // replace , with %2C
-        local qrXoffset = math.floor((LCD_W - qr.pxlSize * (qr.width + 2)) / 2)
+        local qrXoffset = math.floor((LCD_W - ctx.pxlSize * (ctx.qr.width + 2)) / 2)
 
-        lcd.drawText(0, LCD_H - 8, qr.str, SMLSIZE)
+        lcd.drawText(0, LCD_H - 8, newStr, SMLSIZE)
         if ctx.qr:isRunning() then --draw progress bar
-            lcd.drawFilledRectangle(qrXoffset, (continuous and (LCD_H - 14) or 20), qr.pxlSize * qr.width, 5, ERASE)
-            lcd.drawGauge(qrXoffset, (continuous and (LCD_H - 14) or 20), qr.pxlSize * qr.width, 5, qrGenerator.progress, 10)
+            lcd.drawFilledRectangle(qrXoffset, (continuous and (LCD_H - 14) or 20), ctx.pxlSize * ctx.qr.width, 5, ERASE)
+            lcd.drawGauge(qrXoffset, (continuous and (LCD_H - 14) or 20), ctx.pxlSize * ctx.qr.width, 5, ctx.qr.progress, 10)
         end
-        if qr.loopEnd ~= 0 then lcd.drawText(LCD_W, LCD_H - 8, string.format("c=%d", qr.loopEnd - qr.loopStart), SMLSIZE + RIGHT) end
+        if ctx.loopEnd ~= 0 then lcd.drawText(LCD_W, LCD_H - 8, string.format("c=%d", ctx.loopEnd - ctx.loopStart), SMLSIZE + RIGHT) end
 
         if event == EVT_ENTER_BREAK then
             ctx.qr:start(newStr)
@@ -733,9 +744,11 @@ local function run(event)
             doRedraw = true
         elseif event == EVT_VIRTUAL_INC then
             prefixIndex = math.min(prefixIndex + 1, #prefixes)
+            ctx.qr:reset()
             doRedraw = true
         elseif event == EVT_VIRTUAL_DEC then
             prefixIndex = math.max(prefixIndex - 1, 1)
+            ctx.qr:reset()
             doRedraw = true
         end
         if doRedraw and ctx.qr.isvalid then
