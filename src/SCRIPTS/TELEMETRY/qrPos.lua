@@ -12,14 +12,6 @@ end
 -- print("qrcode loaded ", qrcode)
 -- collectgarbage()
 
-local function shallowcopy(orig)
-    local copy = {}
-    for orig_key, orig_value in pairs(orig) do
-        copy[orig_key] = orig_value
-    end
-    return copy
-end
-
 Qr = {
     strinbuf  = {},
     eccbuf    = {},
@@ -537,8 +529,9 @@ function Qr:genframe()
                 y = y + 1
             end
         end
+        self.strinbuf = nil
+        collectgarbage()
 
-        self.strinbuf = shallowcopy(self.eccbuf); --copy by value!
         print("QR: finished interleaving blocks")
         self.progress = self.progress + 1
         if (getUsage() > 50) then return end
@@ -556,7 +549,7 @@ function Qr:genframe()
             self.resume.i = i
             if (getUsage() > 80) then return end
 
-            local t = self.strinbuf[i]
+            local t = self.eccbuf[i]
             for j = 0, 7 do
                 if bit32.band(0x80, t) >= 1 then
                     self.frame[tmp.x + self.width * tmp.y] = true
@@ -598,6 +591,7 @@ function Qr:genframe()
                 t = bit32.lshift(t, 1)
             end
         end
+        self.eccbuf = nil
         print("QR: finished packing")
         self.resume = nil
         self.progress = self.progress + 1
@@ -606,11 +600,8 @@ function Qr:genframe()
     end
 
     if self.progress == 10 then
-        -- save pre-mask copy of frame
-        self.strinbuf = {}
+        collectgarbage()
 
-        -- self.strinbuf = shallowcopy(self.frame)
-        -- self:applymask(t);
         if self.resume == nil then
             self.resume = 0
         end
@@ -623,8 +614,10 @@ function Qr:genframe()
                     xorEqls(self.frame, x + y * self.width) --^
                 end
             end
+            collectgarbage() --keeps sparce array sparce..
         end
         self.resume = nil
+        self.framask = nil
         -- x = self.badcheck(); --TODO tim
 
         -- add in final mask/ecclevel bytes
@@ -646,10 +639,10 @@ function Qr:genframe()
             y = bit32.rshift(y, 1)
         end
         print("QR: finished adding final ecc/level info")
-        collectgarbage()
         self.progress = 0
         self:reset(true) --partial reset, don't reset frame & width
         self.isvalid = true
+        collectgarbage()
         return self.isvalid
     end
 end
@@ -712,28 +705,38 @@ end
 local function run(event)
     loopc = loopc + 1
     if lcd ~= nil then
-        if doRedraw then
+        if doRedraw or ctx.qr:isRunning() then
             lcd.clear()
         else
             lcd.drawFilledRectangle(0, LCD_H - 8, LCD_W, 8, ERASE)
         end
         local location = getGps()
         local newStr = prefixes[prefixIndex] .. location
-        if newStr ~= ctx.qr.inputstr and ctx.qr.progress == 0 then
-            if continuous and not ctx.qr:isRunning() and ((loopc - ctx.loopEnd) > continuousFrameInterval) then
-                ctx.qr:start(newStr)
+        if continuous and (newStr ~= ctx.qr.inputstr) and (not ctx.qr:isRunning()) then
+            if ((loopc - ctx.loopStart) > continuousFrameInterval) then
+                event = EVT_ENTER_BREAK --starts new qr code down below
             end
         end
         --TODO if contains // replace , with %2C
         local qrXoffset = math.floor((LCD_W - ctx.pxlSize * (ctx.qr.width + 2)) / 2)
 
+        --draw text & progress bar
         lcd.drawText(0, LCD_H - 8, newStr, SMLSIZE)
         if ctx.qr:isRunning() then --draw progress bar
-            lcd.drawFilledRectangle(qrXoffset, (continuous and (LCD_H - 14) or 20), ctx.pxlSize * ctx.qr.width, 5, ERASE)
+            -- lcd.drawFilledRectangle(qrXoffset, (continuous and (LCD_H - 14) or 20), ctx.pxlSize * ctx.qr.width, 5, ERASE)
             lcd.drawGauge(qrXoffset, (continuous and (LCD_H - 14) or 20), ctx.pxlSize * ctx.qr.width, 5, ctx.qr.progress, 10)
+            lcd.drawText(LCD_W, LCD_H - 8, tostring(ctx.qr.progress), SMLSIZE + LEFT)
         end
-        if ctx.loopEnd ~= 0 then lcd.drawText(LCD_W, LCD_H - 8, string.format("c=%d", ctx.loopEnd - ctx.loopStart), SMLSIZE + RIGHT) end
+        if ctx.loopEnd ~= 0 then lcd.drawText(LCD_W, LCD_H - 8, string.format("c=%d", ctx.loopEnd - ctx.loopStart), SMLSIZE + LEFT) end
 
+        --draw qr code!
+        if doRedraw and ctx.qr.isvalid then
+            doRedraw = false
+            ctx.qr:draw(qrXoffset, 0, ctx.pxlSize)
+            print("JUST FINISHED rendering", getUsage()) --only reached if for loop completes
+        end
+
+        --handle events
         if event == EVT_ENTER_BREAK then
             ctx.qr:start(newStr)
             ctx.loopStart = loopc
@@ -750,11 +753,6 @@ local function run(event)
             prefixIndex = math.max(prefixIndex - 1, 1)
             ctx.qr:reset()
             doRedraw = true
-        end
-        if doRedraw and ctx.qr.isvalid then
-            doRedraw = false
-            ctx.qr:draw(qrXoffset, 0, ctx.pxlSize)
-            print("JUST FINISHED rendering", getUsage()) --only reached if for loop completes
         end
     end
 
