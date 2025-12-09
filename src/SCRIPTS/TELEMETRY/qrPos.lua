@@ -32,7 +32,6 @@ local FMTWORD_LOOKUP = {
 local MAX_QR_VERSION = 4  -- Version 4 = 33x33, sufficient for GPS with any prefix
 
 Qr = {
-    strinbuf  = {},
     eccbuf    = {},
     frame     = {},
     framask   = {}, --is masked lookup
@@ -70,7 +69,7 @@ function Qr:isRunning()
 end
 
 function Qr:reset(partial)
-    self.strinbuf, self.eccbuf, self.framask, self.genpoly = {}, {}, {}, {}
+    self.eccbuf, self.framask, self.genpoly = {}, {}, {}
     self.isvalid, self.progress, self.resume = false, nil, nil
     if partial == nil then
         self.frame, self.width = {}, 0
@@ -104,41 +103,6 @@ function Qr:modnn(x)
     return x
 end
 
--- Galois field log table - now uses direct indexing
-function Qr:glogLookup(i)
-    i = math.max(1, i)
-    return (i > #GLOG_LOOKUP) and nil or string.byte(GLOG_LOOKUP, i)
-end
-
--- Galios field exponent table - now uses direct indexing
-function Qr:gexpLookup(i)
-    i = math.max(1, i)
-    return (i > #GEXP_LOOKUP) and nil or string.byte(GEXP_LOOKUP, i)
-end
-
--- 4 per version: number of blocks 1,2; data width; ecc width
-function Qr:eccblocksLookup(i)
-    i = math.max(1, i)
-    return (i > #ECCBLOCKS_LOOKUP) and nil or string.byte(ECCBLOCKS_LOOKUP, i)
-end
-
--- alignment pattern (used once)
-function Qr:adeltaLookup(i)
-    i = math.max(1, i + 1)
-    return (i > #ADELTA_LOOKUP) and nil or string.byte(ADELTA_LOOKUP, i)
-end
-
--- version block (used once)
-function Qr:vpatLookup(i)
-    -- Not needed for versions 1-4
-    return nil
-end
-
--- format word lookup (used once)
-function Qr:fmtwordLookup(i)
-    return FMTWORD_LOOKUP[i + 1]
-end
-
 --set bit to indicate cell in qrframe is immutable
 function Qr:setmask(x, y)
     local bt
@@ -164,17 +128,14 @@ function Qr:ismasked(x, y)
     return self.framask[bt] == true
 end
 
-local function xorEqls(table, index, value)
-    table[index] = (table[index] ~= true) and true or nil
-end
-
 -- Apply the selected mask out of the 8.
 function Qr:applymask(m)
     -- Only mask pattern 0 is used (m parameter ignored)
     for y = 0, self.width - 1 do
         for x = 0, self.width - 1 do
             if bit32.band((x + y), 1) == 0 and not self:ismasked(x, y) then
-                xorEqls(self.frame, x + y * self.width) --^
+                -- Inline xorEqls
+                self.frame[x + y * self.width] = (self.frame[x + y * self.width] ~= true) and true or nil
             end
         end
     end
@@ -196,13 +157,11 @@ function Qr:genframe()
                 return
             end
             local k = (self.ecclevel - 1) * 4 + (vsn - 1) * 16
-            self.neccblk1 = self:eccblocksLookup(k + 1)
-            k = k + 1
-            self.neccblk2 = self:eccblocksLookup(k + 1)
-            k = k + 1
-            self.datablkw = self:eccblocksLookup(k + 1)
-            k = k + 1
-            self.eccblkwid = self:eccblocksLookup(k + 1)
+            -- Inline eccblocksLookup calls
+            self.neccblk1 = string.byte(ECCBLOCKS_LOOKUP, math.max(1, k + 1))
+            self.neccblk2 = string.byte(ECCBLOCKS_LOOKUP, math.max(1, k + 2))
+            self.datablkw = string.byte(ECCBLOCKS_LOOKUP, math.max(1, k + 3))
+            self.eccblkwid = string.byte(ECCBLOCKS_LOOKUP, math.max(1, k + 4))
             k = self.datablkw * (self.neccblk1 + self.neccblk2) + self.neccblk2 - 3 + (self.version <= 9 and 1 or 0)
             if #self.inputstr <= k then
                 self.version = vsn
@@ -263,7 +222,8 @@ function Qr:genframe()
 
         -- alignment blocks
         if self.version > 1 then
-            local t = self:adeltaLookup(self.version)
+            -- Inline adeltaLookup
+            local t = string.byte(ADELTA_LOOKUP, math.max(1, self.version + 1))
             local y = self.width - 7
             while true do
                 for x = self.width - 7, t - 3, -t do
@@ -409,15 +369,30 @@ function Qr:genframe()
             if getUsage() > 40 then return end
             self.genpoly[i + 1] = 1;
             for j = i, 1, -1 do
-                self.genpoly[j] = (self.genpoly[j] >= 1) and bit32.bxor(self.genpoly[j - 1], self:gexpLookup(1 + self:modnn(self:glogLookup(1 + self.genpoly[j]) + i))) or self.genpoly[j - 1]
+                -- Inline glogLookup and gexpLookup
+                local idx = math.max(1, 1 + self.genpoly[j])
+                local glog_val = (idx > #GLOG_LOOKUP) and nil or string.byte(GLOG_LOOKUP, idx)
+                if self.genpoly[j] >= 1 and glog_val then
+                    local exp_idx = math.max(1, 1 + self:modnn(glog_val + i))
+                    local exp_val = (exp_idx > #GEXP_LOOKUP) and nil or string.byte(GEXP_LOOKUP, exp_idx)
+                    self.genpoly[j] = bit32.bxor(self.genpoly[j - 1], exp_val or 0)
+                else
+                    self.genpoly[j] = self.genpoly[j - 1]
+                end
             end
-            self.genpoly[0] = self:gexpLookup(1 + self:modnn(self:glogLookup(1 + self.genpoly[0]) + i))
+            -- Inline for genpoly[0]
+            local idx = math.max(1, 1 + self.genpoly[0])
+            local glog_val = (idx > #GLOG_LOOKUP) and nil or string.byte(GLOG_LOOKUP, idx)
+            local exp_idx = math.max(1, 1 + self:modnn((glog_val or 0) + i))
+            self.genpoly[0] = (exp_idx > #GEXP_LOOKUP) and nil or string.byte(GEXP_LOOKUP, exp_idx)
         end
         tmp.i = tmp.i + 1 --increment once more
         for j = tmp.j, self.eccblkwid do --inclusive
             tmp.j = j
             if getUsage() > 40 then return end
-            self.genpoly[j] = self:glogLookup(1 + self.genpoly[j]); -- use logs for genpoly[] to save calc step
+            -- Inline glogLookup
+            local idx = math.max(1, 1 + self.genpoly[j])
+            self.genpoly[j] = (idx > #GLOG_LOOKUP) and nil or string.byte(GLOG_LOOKUP, idx)
         end
         -- don't clear context, next step wants the lookup tables
         if table ~= nil then print("QR: genpoly", table.unpack(self.genpoly)) end --desktop only
@@ -448,17 +423,29 @@ function Qr:genframe()
                 for id = tmp.id, self.datablkw + blk - 1 do
                     tmp.id = id
                     if getUsage() > 60 then return end
-                    local fb = self:glogLookup(1 + bit32.bxor(self.eccbuf[tmp.y + id], self.eccbuf[tmp.k])) --^
+                    -- Inline glogLookup
+                    local xor_val = bit32.bxor(self.eccbuf[tmp.y + id], self.eccbuf[tmp.k])
+                    local idx = math.max(1, 1 + xor_val)
+                    local fb = (idx > #GLOG_LOOKUP) and nil or string.byte(GLOG_LOOKUP, idx)
                     if fb ~= 255 then     --fb term is non-zero
                         for jd = 1, self.eccblkwid - 1 do
-                            self.eccbuf[tmp.k + jd - 1] = bit32.bxor(self.eccbuf[tmp.k + jd], self:gexpLookup(1 + self:modnn(fb + self.genpoly[self.eccblkwid - jd]))) --^
+                            -- Inline gexpLookup
+                            local exp_idx = math.max(1, 1 + self:modnn(fb + self.genpoly[self.eccblkwid - jd]))
+                            local exp_val = (exp_idx > #GEXP_LOOKUP) and nil or string.byte(GEXP_LOOKUP, exp_idx)
+                            self.eccbuf[tmp.k + jd - 1] = bit32.bxor(self.eccbuf[tmp.k + jd], exp_val or 0)
                         end
                     else
                         for jd = tmp.k, tmp.k + self.eccblkwid - 1 do
                             self.eccbuf[jd] = self.eccbuf[jd + 1]
                         end
                     end
-                    self.eccbuf[tmp.k + self.eccblkwid - 1] = fb == 255 and 0 or self:gexpLookup(1 + self:modnn(fb + self.genpoly[0]))
+                    -- Inline gexpLookup for final value
+                    if fb == 255 then
+                        self.eccbuf[tmp.k + self.eccblkwid - 1] = 0
+                    else
+                        local exp_idx = math.max(1, 1 + self:modnn(fb + self.genpoly[0]))
+                        self.eccbuf[tmp.k + self.eccblkwid - 1] = (exp_idx > #GEXP_LOOKUP) and nil or string.byte(GEXP_LOOKUP, exp_idx)
+                    end
                 end
                 tmp.id = nil
                 tmp.y = tmp.y + self.datablkw + blk
@@ -585,7 +572,9 @@ function Qr:genframe()
             if (getUsage() > 60) then return end
             for x = 0, self.width - 1 do
                 if bit32.band((x + y), 1) == 0 and not self:ismasked(x, y) then
-                    xorEqls(self.frame, x + y * self.width) --^
+                    -- Inline xorEqls
+                    local idx = x + y * self.width
+                    self.frame[idx] = (self.frame[idx] ~= true) and true or nil
                 end
             end
         end
@@ -599,8 +588,8 @@ function Qr:genframe()
 
         -- add in final mask/ecclevel bytes
         -- t is always 0 (mask pattern 0)
-        local y = self:fmtwordLookup(bit32.lshift(0 + (self.ecclevel - 1), 3))
         -- low byte
+        local y = FMTWORD_LOOKUP[1 + bit32.lshift(0 + (self.ecclevel - 1), 3)]
         for bit = 0, 7 do
             if bit32.band(y, 1) == 1 then
                 self.frame[(self.width - 1 - bit) + self.width * 8] = true
