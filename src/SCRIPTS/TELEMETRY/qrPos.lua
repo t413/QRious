@@ -374,10 +374,9 @@ function Qr:genframe()
         -- 8 bit data to QR-coded 8 bit data (numeric or alphanum, or kanji not supported)
         local v = #self.inputstr
 
-        -- string to array
+        -- string to array (only populate eccbuf, not strinbuf)
         for i = 0, v - 1 do --we'll force lua tables to use 0-start addressing
             self.eccbuf[i] = string.byte(self.inputstr, i + 1) --adjust for 1-based lua stdlib numbering
-            self.strinbuf[i] = string.byte(self.inputstr, i + 1)
         end
 
         -- calculate max string length
@@ -392,35 +391,35 @@ function Qr:genframe()
         -- shift and repack to insert length prefix
         if (self.version > 9) then
             local i = v
-            self.strinbuf[i + 2] = 0
-            self.strinbuf[i + 3] = 0
+            self.eccbuf[i + 2] = 0
+            self.eccbuf[i + 3] = 0
             while i > 0 do
                 i = i - 1
-                local t = self.strinbuf[i]
-                self.strinbuf[i + 3] = bit32.bor(self.strinbuf[i + 3], bit32.band(255, bit32.lshift(t, 4)))
-                self.strinbuf[i + 2] = bit32.rshift(t, 4)
+                local t = self.eccbuf[i]
+                self.eccbuf[i + 3] = bit32.bor(self.eccbuf[i + 3], bit32.band(255, bit32.lshift(t, 4)))
+                self.eccbuf[i + 2] = bit32.rshift(t, 4)
             end
-            self.strinbuf[2] = bit32.bor(self.strinbuf[2], bit32.band(255, bit32.lshift(v, 4)))
-            self.strinbuf[1] = bit32.rshift(v, 4)
-            self.strinbuf[0] = bit32.bor(0x40, bit32.rshift(v, 12))
+            self.eccbuf[2] = bit32.bor(self.eccbuf[2], bit32.band(255, bit32.lshift(v, 4)))
+            self.eccbuf[1] = bit32.rshift(v, 4)
+            self.eccbuf[0] = bit32.bor(0x40, bit32.rshift(v, 12))
         else
             local i = v
-            self.strinbuf[i + 1] = 0
-            self.strinbuf[i + 2] = 0
+            self.eccbuf[i + 1] = 0
+            self.eccbuf[i + 2] = 0
             while i > 0 do
                 i = i - 1
-                local t = self.strinbuf[i]
-                self.strinbuf[i + 2] = bit32.bor(self.strinbuf[i + 2], bit32.band(255, bit32.lshift(t, 4)))
-                self.strinbuf[i + 1] = bit32.rshift(t, 4)
+                local t = self.eccbuf[i]
+                self.eccbuf[i + 2] = bit32.bor(self.eccbuf[i + 2], bit32.band(255, bit32.lshift(t, 4)))
+                self.eccbuf[i + 1] = bit32.rshift(t, 4)
             end
-            self.strinbuf[1] = bit32.bor(self.strinbuf[1], bit32.band(255, bit32.lshift(v, 4)))
-            self.strinbuf[0] = bit32.bor(0x40, bit32.rshift(v, 4))
+            self.eccbuf[1] = bit32.bor(self.eccbuf[1], bit32.band(255, bit32.lshift(v, 4)))
+            self.eccbuf[0] = bit32.bor(0x40, bit32.rshift(v, 4))
         end
 
         -- fill to end with pad pattern
         for i = v + 3 - (self.version < 10 and 1 or 0), self.maxlength - 1, 2 do
-            self.strinbuf[i] = 0xec
-            self.strinbuf[i + 1] = 0x11
+            self.eccbuf[i] = 0xec
+            self.eccbuf[i + 1] = 0x11
         end
         print("QR: finished bitstream")
         self.progress = self.progress + 1
@@ -467,28 +466,28 @@ function Qr:genframe()
         local tmp = self.resume
         for blk = tmp.blk, 1 do
             for j = tmp.j, (blk == 0 and self.neccblk1 or self.neccblk2) - 1 do
-                -- Calculate and append ECC data to data block.  Block is in strinbuf, indexes to buffers given.
+                -- Calculate and append ECC data to data block.  Block is in eccbuf, indexes to buffers given.
                 --appendrs function, inlined:
                 if tmp.id == nil then
                     for id = 0, self.eccblkwid - 1 do
-                        self.strinbuf[tmp.k + id] = 0
+                        self.eccbuf[tmp.k + id] = 0
                     end
                     tmp.id = 0
                 end
                 for id = tmp.id, self.datablkw + blk - 1 do
                     tmp.id = id
                     if getUsage() > 60 then return end
-                    local fb = self:glogLookup(1 + bit32.bxor(self.strinbuf[tmp.y + id], self.strinbuf[tmp.k])) --^
+                    local fb = self:glogLookup(1 + bit32.bxor(self.eccbuf[tmp.y + id], self.eccbuf[tmp.k])) --^
                     if fb ~= 255 then     --fb term is non-zero
                         for jd = 1, self.eccblkwid - 1 do
-                            self.strinbuf[tmp.k + jd - 1] = bit32.bxor(self.strinbuf[tmp.k + jd], self:gexpLookup(1 + self:modnn(fb + self.genpoly[self.eccblkwid - jd]))) --^
+                            self.eccbuf[tmp.k + jd - 1] = bit32.bxor(self.eccbuf[tmp.k + jd], self:gexpLookup(1 + self:modnn(fb + self.genpoly[self.eccblkwid - jd]))) --^
                         end
                     else
                         for jd = tmp.k, tmp.k + self.eccblkwid - 1 do
-                            self.strinbuf[jd] = self.strinbuf[jd + 1]
+                            self.eccbuf[jd] = self.eccbuf[jd + 1]
                         end
                     end
-                    self.strinbuf[tmp.k + self.eccblkwid - 1] = fb == 255 and 0 or self:gexpLookup(1 + self:modnn(fb + self.genpoly[0]))
+                    self.eccbuf[tmp.k + self.eccblkwid - 1] = fb == 255 and 0 or self:gexpLookup(1 + self:modnn(fb + self.genpoly[0]))
                 end
                 tmp.id = nil
                 tmp.y = tmp.y + self.datablkw + blk
@@ -499,6 +498,7 @@ function Qr:genframe()
         end
         print("QR: finished appending ecc")
         self.resume = nil
+        self.genpoly = nil  -- Clear generator polynomial, no longer needed
         self.progress = self.progress + 1
         collectgarbage()
         if (getUsage() > 50) then return end
@@ -506,30 +506,33 @@ function Qr:genframe()
 
     if self.progress == 8 then
         -- interleave blocks
+        -- Use a temporary buffer for interleaving
+        local tempbuf = {}
         local y = 0;
         local iback = 0
         for i = 0, self.datablkw - 1 do
             for j = 0, self.neccblk1 - 1 do
-                self.eccbuf[y] = self.strinbuf[i + j * self.datablkw]
+                tempbuf[y] = self.eccbuf[i + j * self.datablkw]
                 y = y + 1
             end
             for j = 0, self.neccblk2 - 1 do
-                self.eccbuf[y] = self.strinbuf[(self.neccblk1 * self.datablkw) + i + (j * (self.datablkw + 1))]
+                tempbuf[y] = self.eccbuf[(self.neccblk1 * self.datablkw) + i + (j * (self.datablkw + 1))]
                 y = y + 1
             end
             iback = i
         end
         for j = 0, self.neccblk2 - 1 do
-            self.eccbuf[y] = self.strinbuf[(self.neccblk1 * self.datablkw) + iback + (j * (self.datablkw + 1))]
+            tempbuf[y] = self.eccbuf[(self.neccblk1 * self.datablkw) + iback + (j * (self.datablkw + 1))]
             y = y + 1
         end
         for i = 0, self.eccblkwid - 1 do
             for j = 0, self.neccblk1 + self.neccblk2 - 1 do
-                self.eccbuf[y] = self.strinbuf[self.maxlength + i + j * self.eccblkwid]
+                tempbuf[y] = self.eccbuf[self.maxlength + i + j * self.eccblkwid]
                 y = y + 1
             end
         end
-        self.strinbuf = nil
+        -- Copy back to eccbuf
+        self.eccbuf = tempbuf
         collectgarbage()
 
         print("QR: finished interleaving blocks")
@@ -591,7 +594,7 @@ function Qr:genframe()
                 t = bit32.lshift(t, 1)
             end
         end
-        self.eccbuf = nil
+        self.eccbuf = nil  -- Clear eccbuf, no longer needed
         print("QR: finished packing")
         self.resume = nil
         self.progress = self.progress + 1
