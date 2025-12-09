@@ -170,31 +170,11 @@ end
 
 -- Apply the selected mask out of the 8.
 function Qr:applymask(m)
-    if m == 0 then
-        for y = 0, self.width - 1 do
-            for x = 0, self.width - 1 do
-                if bit32.band((x + y), 1) == 0 and not self:ismasked(x, y) then
-                    xorEqls(self.frame, x + y * self.width) --^
-                end
-            end
-        end
-    elseif m == 1 then
-        for y = 0, self.width - 1 do
-            for x = 0, self.width - 1 do
-                if bit32.band(y, 1) == 0 and not self:ismasked(x, y) then
-                    xorEqls(self.frame, x + y * self.width) --^
-                end
-            end
-        end
-    elseif m == 2 then
-        for y = 0, self.width - 1 do
-            local rx = 0
-            for x = 0, self.width - 1 do
-                if rx == 3 then rx = 0 end
-                if not rx and not self:ismasked(x, y) then
-                    xorEqls(self.frame, x + y * self.width) --^
-                end
-                rx = rx + 1
+    -- Only mask pattern 0 is used (m parameter ignored)
+    for y = 0, self.width - 1 do
+        for x = 0, self.width - 1 do
+            if bit32.band((x + y), 1) == 0 and not self:ismasked(x, y) then
+                xorEqls(self.frame, x + y * self.width) --^
             end
         end
     end
@@ -341,20 +321,7 @@ function Qr:genframe()
 
         -- version block
         if self.version > 6 then
-            local t = self:vpatLookup(self.version - 7 - 1)
-            local k = 17
-            for x = 0, 5 do
-                for y = 0, 2 do -- and k--
-                    if bit32.band(1, (k > 11 and bit32.rshift(self.version, (k - 12)) or bit32.rshift(t, k))) == 1 then
-                        self.frame[(5 - x) + self.width * (2 - y + self.width - 11)] = true
-                        self.frame[(2 - y + self.width - 11) + self.width * (5 - x)] = true
-                    else
-                        self:setmask(5 - x, 2 - y + self.width - 11)
-                        self:setmask(2 - y + self.width - 11, 5 - x)
-                    end
-                    k = k - 1
-                end
-            end
+            -- Removed: not needed for MAX_QR_VERSION = 4
         end
 
         -- sync mask bits - only set above for white spaces, so add in black bits
@@ -612,7 +579,7 @@ function Qr:genframe()
         if self.resume == nil then
             self.resume = 0
         end
-        local t = 0 --TODO yes, here's method 0:
+        -- Apply mask pattern 0 directly
         for y = self.resume, self.width - 1 do
             self.resume = y
             if (getUsage() > 60) then return end
@@ -628,10 +595,11 @@ function Qr:genframe()
         collectgarbage()
 
         self.resume = nil
-        -- x = self.badcheck(); --TODO tim
+        -- Removed badcheck - unused
 
         -- add in final mask/ecclevel bytes
-        local y = self:fmtwordLookup(bit32.lshift(t + (self.ecclevel - 1), 3))
+        -- t is always 0 (mask pattern 0)
+        local y = self:fmtwordLookup(bit32.lshift(0 + (self.ecclevel - 1), 3))
         -- low byte
         for bit = 0, 7 do
             if bit32.band(y, 1) == 1 then
