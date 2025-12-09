@@ -434,7 +434,7 @@ function Qr:genframe()
         -- calculate generator polynomial
         if self.resume == nil then --first time through
             self.genpoly[0] = 1;
-            self.resume = {i=0, j=0} --j for 2nd loop below
+            self.resume = {i=0, j=0} -- Reuse for both loops
         end
         local tmp = self.resume
         for i = tmp.i, self.eccblkwid - 1 do
@@ -442,7 +442,7 @@ function Qr:genframe()
             if getUsage() > 40 then return end
             self.genpoly[i + 1] = 1;
             for j = i, 1, -1 do
-                self.genpoly[j] = (self.genpoly[j] >= 1) and bit32.bxor(self.genpoly[j - 1], self:gexpLookup(1 + self:modnn(self:glogLookup(1 + self.genpoly[j]) + i))) or self.genpoly[j - 1] --^
+                self.genpoly[j] = (self.genpoly[j] >= 1) and bit32.bxor(self.genpoly[j - 1], self:gexpLookup(1 + self:modnn(self:glogLookup(1 + self.genpoly[j]) + i))) or self.genpoly[j - 1]
             end
             self.genpoly[0] = self:gexpLookup(1 + self:modnn(self:glogLookup(1 + self.genpoly[0]) + i))
         end
@@ -455,6 +455,8 @@ function Qr:genframe()
         -- don't clear context, next step wants the lookup tables
         if table ~= nil then print("QR: genpoly", table.unpack(self.genpoly)) end --desktop only
         print("QR: finished generator polynomial")
+        -- Clear resume for next step to reuse
+        self.resume = nil
         self.progress = self.progress + 1
         collectgarbage()
         if (getUsage() > 50) then return end
@@ -462,8 +464,8 @@ function Qr:genframe()
 
     if self.progress == 7 then
         -- append ecc to data buffer
-        if self.resume.blk == nil then
-            self.resume = {blk=0, j=0, k=self.maxlength, y=0}
+        if self.resume == nil then
+            self.resume = {blk=0, j=0, k=self.maxlength, y=0, id=nil}
         end
         local tmp = self.resume
         for blk = tmp.blk, 1 do
@@ -619,10 +621,13 @@ function Qr:genframe()
                     xorEqls(self.frame, x + y * self.width) --^
                 end
             end
-            collectgarbage() --keeps sparce array sparce..
         end
-        self.resume = nil
+
+        -- Clear framask immediately after masking is complete, before final formatting
         self.framask = nil
+        collectgarbage()
+
+        self.resume = nil
         -- x = self.badcheck(); --TODO tim
 
         -- add in final mask/ecclevel bytes
