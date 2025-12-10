@@ -17,6 +17,7 @@ Your drone / plane gone down in a field and it's hard to find?
 - Built to support several different mapping methods:
   * QR-code native `geo:` data that opens in your phone's native map app
   * google specific link for opening in google maps specifically
+  * CoMaps link for opening in the free open source [CoMaps App](https://comaps.app) for offline mapping
   * GURU maps link for opening in [Guru Maps](https://gurumaps.app) for offline mapping
 - can be launched as a standalone script
 - can be added as a telemetry widget
