@@ -19,10 +19,10 @@ end
 local MAX_QR_VERSION = 4  -- Version 4 = 33x33, sufficient for GPS with any prefix
 
 Qr = {
-    eccbuf    = {},
-    frame     = {},
-    framask   = {}, --is masked lookup
-    genpoly   = {},
+    eccbuf    = nil,
+    frame     = nil,
+    framask   = nil, --is masked lookup
+    genpoly   = nil,
     ecclevel  = 1,
     version   = 0,
     width     = 0,
@@ -56,10 +56,10 @@ function Qr:isRunning()
 end
 
 function Qr:reset(partial)
-    self.eccbuf, self.framask, self.genpoly = {}, {}, {}
+    self.eccbuf, self.framask, self.genpoly = nil, nil, nil
     self.isvalid, self.progress, self.resume = false, nil, nil
     if partial == nil then
-        self.frame, self.width = {}, 0
+        self.frame, self.width = nil, 0
     end
 end
 
@@ -114,19 +114,6 @@ function Qr:ismasked(x, y)
     return self.framask[bt] == true
 end
 
--- Apply the selected mask out of the 8.
-function Qr:applymask(m)
-    -- Only mask pattern 0 is used (m parameter ignored)
-    for y = 0, self.width - 1 do
-        for x = 0, self.width - 1 do
-            if bit32.band((x + y), 1) == 0 and not self:ismasked(x, y) then
-                -- Inline xorEqls
-                self.frame[x + y * self.width] = (self.frame[x + y * self.width] ~= true) and true or nil
-            end
-        end
-    end
-end
-
 --Generate QR frame array
 function Qr:genframe()
     if self.progress == 0 then
@@ -160,6 +147,7 @@ function Qr:genframe()
 
     if self.progress == 2 then --initialize frame and eccbuf
         local eccbufLen = self.datablkw + (self.datablkw + self.eccblkwid) * (self.neccblk1 + self.neccblk2) + self.neccblk2
+        self.eccbuf = {}
         for t = 0, eccbufLen - 1 do
             self.eccbuf[t] = 0
         end
@@ -169,6 +157,8 @@ function Qr:genframe()
 
     if self.progress == 3 then --insert finder patterns and alignment blocks
         -- insert finders - black to frame, white to mask
+        self.framask = {}
+        self.frame = {}
         for t = 0, 2 do
             local k, y = 0, 0
             if t == 1 then k = self.width - 7 end
@@ -284,6 +274,7 @@ function Qr:genframe()
     end
 
     if self.progress == 6 then --generate ECC
+        self.genpoly = {}
         if self.resume == nil then
             self.genpoly[0] = 1
             self.resume = {i=0, j=0}
