@@ -480,7 +480,7 @@ local loopc = 0
 local ctx = {
     loopStart = 0, loopEnd = 0,
     lastValid = 0,
-    lastValidPos = "",
+    lastValidPos = "no gps",
     pxlSize = 2,
     qr = nil
 }
@@ -488,7 +488,7 @@ local prefixes = { "", "geo:", "comgooglemaps://?q=", "GURU://" }
 local prefixIndex = 1
 local doRedraw = true
 local continuous = false
-local continuousFrameInterval = 100
+local continuousFrameInterval = 50 --in loopc (10 loopc = 1 second)
 local gpsfield = nil
 local lastBGloopc = 0
 
@@ -549,7 +549,7 @@ local function run(event)
         lcd.drawText(LCD_W / 2, LCD_H - 8, ((location == nil) and "[X]" or "") .. newStr, SMLSIZE + CENTER)
 
         if ctx.qr:isRunning() then -- Show progress bar
-            lcd.drawGauge(LCD_W / 2, LCD_H - 14, ctx.pxlSize * ctx.qr.width, 5, ctx.qr.progress, 10)
+            lcd.drawGauge(LCD_W/4, LCD_H - 14, LCD_W/2, 5, ctx.qr.progress, 10) --x,y,width,height, value, maxvalue
         elseif ctx.qr.isvalid and doRedraw then -- Show generated QR
             doRedraw = false
             local qrXoffset = math.floor((LCD_W - ctx.pxlSize * (ctx.qr.width + 2)) / 2)
@@ -560,7 +560,7 @@ local function run(event)
                 lcd.drawText(centerX, LCD_H / 2, "<auto in " .. (nextrender/10) .. ">", SMLSIZE + CENTER)
             else
                 lcd.drawText(centerX, 8, "QR Gen", MIDSIZE + CENTER)
-                lcd.drawText(centerX, 22, "[enter] once [long] auto", SMLSIZE + CENTER)
+                lcd.drawText(centerX, 22, "[enter] = once [menu]=auto", SMLSIZE + CENTER)
                 lcd.drawText(centerX, 32, "<+/-> Change link type", SMLSIZE + CENTER)
             end
         end
