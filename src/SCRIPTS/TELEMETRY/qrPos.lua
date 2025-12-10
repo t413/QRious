@@ -591,11 +591,11 @@ local function run(event)
             doRedraw = true
         elseif event == EVT_VIRTUAL_INC then
             prefixIndex = math.min(prefixIndex + 1, #prefixes)
-            -- ctx.qr:reset() TODO TEMPORARY for pretending new coords
+            ctx.qr:reset()
             doRedraw = true
         elseif event == EVT_VIRTUAL_DEC then
             prefixIndex = math.max(prefixIndex - 1, 1)
-            -- ctx.qr:reset() TODO TEMPORARY
+            ctx.qr:reset()
             doRedraw = true
         end
     end
