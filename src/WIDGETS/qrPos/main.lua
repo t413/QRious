@@ -21,11 +21,11 @@ local myoptions = {
 	{ "linknone",   BOOL, 1 },
 	{ "linkgeo",    BOOL, 0 },
 	{ "linkgoogle", BOOL, 0 },
+	{ "linkcomaps", BOOL, 0 },
 	{ "linkguru",   BOOL, 0 },
 	{ "interval", VALUE, 100, 500 },
   }
-local prefixes = { linknone = "", linkgeo = "geo:", linkgoogle = "comgooglemaps://?q=", linkguru = "GURU://" }
-
+local prefixes = { linknone = "", linkgeo = "geo:", linkgoogle = "comgooglemaps://?q=", linkcomaps = "cm://map?ll=", linkguru = "GURU://" }
 local function create(zone, options)
 	print("qrWidget create:", dump(zone), dump(options), dump(qr))
 

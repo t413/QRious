@@ -484,7 +484,7 @@ local ctx = {
     pxlSize = 2,
     qr = nil
 }
-local prefixes = { "", "geo:", "comgooglemaps://?q=", "GURU://" }
+local prefixes = { "", "geo:", "comgooglemaps://?q=", "cm://map?ll=", "GURU://" }
 local prefixIndex = 1
 local doRedraw = true
 local continuous = false
