@@ -1,7 +1,6 @@
 # QRious, QR Code generation for OpenTX / EdgeTx
 
 [![Top Language](https://img.shields.io/github/languages/top/t413/QRious?style=flat-square)](https://github.com/t413/QRious)
-[![Lines of Code](https://tokei.rs/b1/github/t413/QRious?style=flat-square)](https://github.com/t413/QRious/graphs/code-frequency)
 [![GitHub Repo stars](https://img.shields.io/github/stars/t413/QRious?style=flat-square)](https://github.com/t413/QRious/stargazers)
 [![GitHub forks](https://img.shields.io/github/forks/t413/QRious?style=flat-square)](https://github.com/t413/QRious/network/members)
 [![GitHub issues](https://img.shields.io/github/issues/t413/QRious?style=flat-square)](https://github.com/t413/QRious/issues)
@@ -52,6 +51,17 @@ _Example running on my TBS Tango 2:_
 
 _Example running on my old Frsky X-Lite and in the terminal_
 ![opentx example](https://t413.com/p/2021-qrious/opentx.jpeg)
+
+## Key Technical Achievements
+
+- **Fully Reentrant Architecture**: 800+ lines of QR generation split into 10 incremental stages that pause/resume across execution cycles without blocking radio telemetry
+- **CPU Load Monitoring**: Each stage checks `getUsage()` and yields at 40-80% thresholds to keep the radio responsive
+- **Aggressive Memory Management**: Clears buffers (`eccbuf`, `genpoly`, `framask`) immediately after use with strategic `collectgarbage()` calls for RAM-constrained microcontrollers
+- **Lua Array Adaptation**: Reimplemented QR algorithms for Lua's 1-indexed arrays, including Galois field arithmetic via lookup tables
+- **Symmetrical Masking**: Stores only half the mask data by exploiting coordinate symmetry (`x > y` mirrors `y > x`)
+- **Multi-Platform Testing**: Runs on OpenTX/EdgeTX hardware, simulators, and command-line with ASCII QR output
+- **Live GPS Integration**: Generates scannable codes from real-time telemetry with multiple mapping service prefixes
+
 
 ## Testing / Development
 
