@@ -24,7 +24,7 @@ local myoptions = {
 	{ "linkguru",   BOOL, 0 },
 	{ "interval", VALUE, 100, 500 },
   }
-  local prefixes = { linknone = "", linkgeo = "geo:", linkgoogle = "comgooglemaps://?q=", linkguru = "GURU://" }
+local prefixes = { linknone = "", linkgeo = "geo:", linkgoogle = "comgooglemaps://?q=", linkguru = "GURU://" }
 
 local function create(zone, options)
 	print("qrWidget create:", dump(zone), dump(options), dump(qr))
@@ -52,23 +52,35 @@ local function background(vars)
 end
 
 local function refresh(vars)
-	if qr == nil then
-		print("qr is nil?")
-		create()
-	end
+    if qr == nil then
+        print("qr is nil?")
+        local zone = vars and vars.zone or {x=0, y=0, w=100, h=100}
+        local options = vars and vars.options or myoptions
+        local newVars = create(zone, options)
+        for k, v in pairs(newVars) do
+            vars[k] = v
+        end
+    end
 
-	local prefix = ""
-	for key, value in pairs(prefixes) do
-		if vars.options[key] == 1 then
-			prefix = value
-			break
-		end
-	end
-	local newStr = prefix .. getGps()
-	if newStr ~= qr.inputstr and not qr:isRunning() and ((vars.loopc - vars.loopEnd) > (vars.options.interval or 100)) then
-		print("qrWidget start", newStr)
-		qr:start(newStr)
-	end
+    local prefix = ""
+    for key, value in pairs(prefixes) do
+        if vars.options[key] == 1 then
+            prefix = value
+            break
+        end
+    end
+    local newStr = prefix .. getGps()
+
+    -- Show instructions when no QR code is present
+    if not qr.isvalid and not qr:isRunning() then
+        lcd.drawText(vars.zone.x + vars.zone.w/2, vars.zone.y + vars.zone.h/2 - 10, "Generating...", CENTER + SMLSIZE + CUSTOM_COLOR)
+        lcd.drawText(vars.zone.x + vars.zone.w/2, vars.zone.y + vars.zone.h/2, "or check GPS", CENTER + SMLSIZE + CUSTOM_COLOR)
+    end
+
+    if newStr ~= qr.inputstr and not qr:isRunning() and ((vars.loopc - vars.loopEnd) > (vars.options.interval or 100)) then
+        print("qrWidget start", newStr)
+        qr:start(newStr)
+    end
 
 	if qr:isRunning() then
 		if qr:genframe(vars.str) then
@@ -93,5 +105,3 @@ local function refresh(vars)
 end
 
 return { name="qrLua", options=myoptions, create=create, update=update, refresh=refresh, background=background }
-
--- Error in widget qrLua refresh() function: /WIDGETS/qrPos/main.lua:28: attempt to index local 'options' (a nil value)
