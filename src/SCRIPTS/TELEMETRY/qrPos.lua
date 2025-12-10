@@ -479,6 +479,8 @@ end
 local loopc = 0
 local ctx = {
     loopStart = 0, loopEnd = 0,
+    lastValid = 0,
+    lastValidPos = "",
     pxlSize = 2,
     qr = nil
 }
@@ -499,7 +501,7 @@ local function getGps()
         if type(gps) == "table" and gps.lat ~= nil and gps.lon ~= nil then
             return string.format("%.6f,%.6f", gps.lat, gps.lon)
         else
-            return "no gps"
+            return nil
         end
     else
         return "no gps sensor"
@@ -528,41 +530,59 @@ local function run(event)
             lcd.drawFilledRectangle(0, LCD_H - 8, LCD_W, 8, ERASE)
         end
         local location = getGps()
-        local newStr = prefixes[prefixIndex] .. location
-        if continuous and (newStr ~= ctx.qr.inputstr) and (not ctx.qr:isRunning()) and ((loopc - ctx.loopStart) > continuousFrameInterval) then
-            event = EVT_ENTER_BREAK
+        if location ~= nil then
+            ctx.lastValidPos = location
         end
-        local qrXoffset = math.floor((LCD_W - ctx.pxlSize * (ctx.qr.width + 2)) / 2)
-        lcd.drawText(0, LCD_H - 8, newStr, SMLSIZE)
-        if ctx.qr:isRunning() then --draw progress bar
-            lcd.drawGauge(qrXoffset, (continuous and (LCD_H - 14) or 20), ctx.pxlSize * ctx.qr.width, 5, ctx.qr.progress, 10)
-            lcd.drawText(LCD_W, LCD_H - 8, tostring(ctx.qr.progress), SMLSIZE + LEFT)
+        local newStr = prefixes[prefixIndex] .. (location or ctx.lastValidPos)
+        local nextrender = continuousFrameInterval - (loopc - ctx.loopStart)
+        local qrUpToDate = ctx.qr.isvalid and (newStr == ctx.qr.inputstr)
+        if qrUpToDate then
+            lastValid = loopc
+        elseif ctx.qr.isvalid then --display time since last valid QR in top
+            local dt = string.format("*%d", (loopc - lastValid) / 10) --in seconds
+            lcd.drawText(0, 0, dt, SMLSIZE)
         end
-        if ctx.loopEnd ~= 0 then
-            lcd.drawText(LCD_W, LCD_H - 8, string.format("c=%d", ctx.loopEnd - ctx.loopStart), SMLSIZE + LEFT)
+        if continuous and (not qrUpToDate) and (not ctx.qr:isRunning()) and (nextrender <= 1) then
+            event = EVT_ENTER_BREAK --simulate enter press to redraw qr
         end
-        if doRedraw and ctx.qr.isvalid then
+        -- Always show current string at bottom
+        lcd.drawText(LCD_W / 2, LCD_H - 8, ((location == nil) and "[X]" or "") .. newStr, SMLSIZE + CENTER)
+
+        if ctx.qr:isRunning() then -- Show progress bar
+            lcd.drawGauge(LCD_W / 2, LCD_H - 14, ctx.pxlSize * ctx.qr.width, 5, ctx.qr.progress, 10)
+        elseif ctx.qr.isvalid and doRedraw then -- Show generated QR
             doRedraw = false
+            local qrXoffset = math.floor((LCD_W - ctx.pxlSize * (ctx.qr.width + 2)) / 2)
             ctx.qr:draw(qrXoffset, 0, ctx.pxlSize)
-            print("JUST FINISHED rendering", getUsage()) --only reached if for loop completes
+        elseif doRedraw then -- Show waiting/instruction screen
+            local centerX = LCD_W / 2
+            if continuous then
+                lcd.drawText(centerX, LCD_H / 2, "<auto in " .. (nextrender/10) .. ">", SMLSIZE + CENTER)
+            else
+                lcd.drawText(centerX, 8, "QR Gen", MIDSIZE + CENTER)
+                lcd.drawText(centerX, 22, "[enter] once [long] auto", SMLSIZE + CENTER)
+                lcd.drawText(centerX, 32, "<+/-> Change link type", SMLSIZE + CENTER)
+            end
         end
 
         --handle events
         if event == EVT_ENTER_BREAK then
             ctx.qr:start(newStr)
-            ctx.loopStart = loopc
-        elseif event == EVT_VIRTUAL_MENU then
+            ctx.loopStart, lastValid = loopc, loopc
+        elseif event == EVT_VIRTUAL_MENU or event == EVT_ENTER_LONG then
             continuous = not continuous
+            ctx.qr:reset()
+            doRedraw = true
             print("continuous mode " .. (continuous and "on" or "off"))
         elseif event == EVT_EXIT_BREAK then
             doRedraw = true
         elseif event == EVT_VIRTUAL_INC then
             prefixIndex = math.min(prefixIndex + 1, #prefixes)
-            ctx.qr:reset()
+            -- ctx.qr:reset() TODO TEMPORARY for pretending new coords
             doRedraw = true
         elseif event == EVT_VIRTUAL_DEC then
             prefixIndex = math.max(prefixIndex - 1, 1)
-            ctx.qr:reset()
+            -- ctx.qr:reset() TODO TEMPORARY
             doRedraw = true
         end
     end
