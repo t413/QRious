@@ -1,26 +1,15 @@
 local FILE_PATH = "/SCRIPTS/TELEMETRY"
-print(_VERSION)
-if getUsage == nil then --not simulator, here's regular lua
+if getUsage == nil then --not simulator
     if not bit32 ~= nil then
-        print("loading bit32")
         load("bit32={band=function(a,b) return a&b end,bor=function(a,b)return a|b end,bxor=function(a,b) return a~b end,bnot=function(a) return ~a end,rshift=function(a,n) return a>>n end,lshift=function(a,n)  return a<<n end}")()
-        -- loadScript(FILE_PATH .. "/test2.lua")()
     end
 end
 
--- local qrcode = loadScript(FILE_PATH .. "/qrencode.lua", env)()
--- print("qrcode loaded ", qrcode)
--- collectgarbage()
-
--- Lookup tables as module-level constants
--- Trimmed to support only versions 1-4 (MAX_QR_VERSION = 4)
+-- Lookup tables as module-level constants, trimmed to support only versions 1-4 (MAX_QR_VERSION = 4)
 local GLOG_LOOKUP = "\255\000\001\025\0022\026\198\003\2233\238\027h\199K\004d\224\0144\141\239\129\028\193i\248\200\008Lq\005\138e/\225$\015\0335\147\142\218\240\018\130E\029\181\194}j'\249\185\201\154\009xM\228r\166\006\191\139bf\2210\253\226\152%\179\016\145\034\1366\208\148\206\143\150\219\189\241\210\019\092\1318F@\030B\182\163\195H~nk:(T\250\133\186=\202^\155\159\010\021y+N\212\229\172s\243\167W\007p\192\247\140\128c\013gJ\222\2371\197\254\024\227\165\153w&\184\180|\017D\146\217#\032\137.7?\209[\149\188\207\205\144\135\151\178\220\252\190a\242V\211\171\020*]\158\132<9SGmA\162\031-C\216\183{\164v\196\023I\236\127\012o\246l\161;R)\157U\170\251`\134\177\187\204>Z\203Y_\176\156\169\160Q\011\245\022\235zu,\215O\174\213\233\230\231\173\232t\214\244\234\168PX\175"
 local GEXP_LOOKUP = "\001\002\004\008\016\032@\128\029:t\232\205\135\019&L\152-Z\180u\234\201\143\003\006\012\0240`\192\157'N\156%J\1485j\212\181w\238\193\159#F\140\005\010\020(P\160]\186i\210\185o\222\161_\190a\194\153/^\188e\202\137\015\030<x\240\253\231\211\187k\214\177\127\254\225\223\163[\182q\226\217\175C\134\017\034D\136\013\0264h\208\189g\206\129\031>|\248\237\199\147;v\236\197\1513f\204\133\023.\092\184m\218\169O\158\033B\132\021*T\168M\154)R\164U\170I\1469r\228\213\183s\230\209\191c\198\145?~\252\229\215\179{\246\241\255\227\219\171K\1501b\196\1497n\220\165W\174A\130\0252d\200\141\007\014\0288p\224\221\167S\166Q\162Y\178y\242\249\239\195\155+V\172E\138\009\018$H\144=z\244\245\247\243\251\235\203\139\011\022,X\176}\250\233\207\131\0276l\216\173G\142\000"
--- Only versions 1-4, 4 ECC levels = 16 entries (4 bytes each)
 local ECCBLOCKS_LOOKUP = "\001\000\019\007\001\000\016\010\001\000\013\013\001\000\009\017\001\000\034\010\001\000\028\016\001\000\022\022\001\000\016\028\001\0007\015\001\000,\026\002\000\017\018\002\000\013\022\001\000P\020\002\000\032\018\002\002\015\018\002\002\011\022"
--- Only versions 1-4 needed
 local ADELTA_LOOKUP = "\000\011\015\019\023"
--- Format word lookup remains the same (used for all versions)
 local FMTWORD_LOOKUP = {
     0x77c4, 0x72f3, 0x7daa, 0x789d, 0x662f, 0x6318, 0x6c41, 0x6976, --L
     0x5412, 0x5125, 0x5e7c, 0x5b4b, 0x45f9, 0x40ce, 0x4f97, 0x4aa0, --M
@@ -28,7 +17,6 @@ local FMTWORD_LOOKUP = {
     0x1689, 0x13be, 0x1ce7, 0x19d0, 0x0762, 0x0255, 0x0d0c, 0x083b  --H
 }
 
--- Configuration
 local MAX_QR_VERSION = 4  -- Version 4 = 33x33, sufficient for GPS with any prefix
 
 Qr = {
@@ -73,7 +61,6 @@ function Qr:reset(partial)
     self.isvalid, self.progress, self.resume = false, nil, nil
     if partial == nil then
         self.frame, self.width = {}, 0
-        print("Qr: full reset")
     end
 end
 
@@ -143,21 +130,18 @@ end
 
 --Generate QR frame array
 function Qr:genframe()
-
     if self.progress == 0 then
-        print("Qr: begin on " .. self.inputstr)
-        self.progress = self.progress + 1
+        self.progress = 1
     end
-    if self.progress == 1 then
+
+    if self.progress == 1 then --determine version
         if self.resume == nil then self.resume = {vsn = 0} end
-        -- find the smallest version that fits the string
         for vsn = self.resume.vsn, MAX_QR_VERSION do
             if getUsage() > 60 then
                 self.resume.vsn = vsn
                 return
             end
             local k = (self.ecclevel - 1) * 4 + (vsn - 1) * 16
-            -- Inline eccblocksLookup calls
             self.neccblk1 = string.byte(ECCBLOCKS_LOOKUP, math.max(1, k + 1))
             self.neccblk2 = string.byte(ECCBLOCKS_LOOKUP, math.max(1, k + 2))
             self.datablkw = string.byte(ECCBLOCKS_LOOKUP, math.max(1, k + 3))
@@ -169,41 +153,32 @@ function Qr:genframe()
             end
         end
         self.resume = nil
-        self.width = 17 + 4 * self.version;
+        self.width = 17 + 4 * self.version
         print(string.format("QR: finished calculating version [%d] width [%d] from data len [%d]", self.version, self.width, #self.inputstr))
-
-        self.progress = self.progress + 1
-        if (getUsage() > 50) then return end
+        self.progress = 2
+        if getUsage() > 50 then return end
     end
 
-    if self.progress == 2 then
-        -- allocate, clear and setup data structures
+    if self.progress == 2 then --initialize frame and eccbuf
         local eccbufLen = self.datablkw + (self.datablkw + self.eccblkwid) * (self.neccblk1 + self.neccblk2) + self.neccblk2
         for t = 0, eccbufLen - 1 do
             self.eccbuf[t] = 0
         end
-
-        -- don't pre-allocate anymore: leave sparse to use less memory
-        -- for t = 0, self.width * self.width - 1 do self.frame[t] = 0 end
-        -- for t = 0, (self.width * (self.width + 1) + 1) / 2 - 1 do self.framask[t] = nil end
-        print("QR: finished allocate")
-
-        self.progress = self.progress + 1
-        if (getUsage() > 50) then return end
+        self.progress = 3
+        if getUsage() > 50 then return end
     end
 
-    if self.progress == 3 then
+    if self.progress == 3 then --insert finder patterns and alignment blocks
         -- insert finders - black to frame, white to mask
         for t = 0, 2 do
-            local k = 0;
-            local y = 0;
-            if t == 1 then k = (self.width - 7) end
-            if t == 2 then y = (self.width - 7) end
+            local k, y = 0, 0
+            if t == 1 then k = self.width - 7 end
+            if t == 2 then y = self.width - 7 end
             self.frame[(y + 3) + self.width * (k + 3)] = true
             for x = 0, 5 do
-                self.frame[(y + x) + self.width * k]           = true
-                self.frame[y + self.width * (k + x + 1)]       = true
-                self.frame[(y + 6) + self.width * (k + x)]     = true
+                self.frame[(y + x) + self.width * k] = true
+                self.frame[y + self.width * (k + x + 1)] = true
+                self.frame[(y + 6) + self.width * (k + x)] = true
                 self.frame[(y + x + 1) + self.width * (k + 6)] = true
             end
             for x = 1, 4 do
@@ -213,16 +188,14 @@ function Qr:genframe()
                 self:setmask(y + x + 1, k + 5)
             end
             for x = 2, 3 do
-                self.frame[(y + x) + self.width * (k + 2)]     = true
+                self.frame[(y + x) + self.width * (k + 2)] = true
                 self.frame[(y + 2) + self.width * (k + x + 1)] = true
-                self.frame[(y + 4) + self.width * (k + x)]     = true
+                self.frame[(y + 4) + self.width * (k + x)] = true
                 self.frame[(y + x + 1) + self.width * (k + 4)] = true
             end
         end
-
         -- alignment blocks
         if self.version > 1 then
-            -- Inline adeltaLookup
             local t = string.byte(ADELTA_LOOKUP, math.max(1, self.version + 1))
             local y = self.width - 7
             while true do
@@ -234,16 +207,12 @@ function Qr:genframe()
                 self:putalign(y, 6)
             end
         end
-
-        print("QR: finished alignment")
-        self.progress = self.progress + 1
-        if (getUsage() > 50) then return end
+        self.progress = 4
+        if getUsage() > 50 then return end
     end
 
-    if self.progress == 4 then
-        -- single black
+    if self.progress == 4 then --add timing patterns and reserve format area
         self.frame[8 + self.width * (self.width - 8)] = true
-
         -- timing gap - mask only
         for y = 0, 6 do
             self:setmask(7, y)
@@ -255,19 +224,13 @@ function Qr:genframe()
             self:setmask(x + self.width - 8, 7)
             self:setmask(x, self.width - 8)
         end
-
         -- reserve mask-format area
-        for x = 0, 8 do
-            self:setmask(x, 8)
-        end
+        for x = 0, 8 do self:setmask(x, 8) end
         for x = 0, 7 do
             self:setmask(x + self.width - 8, 8)
             self:setmask(8, x)
         end
-        for y = 0, 6 do
-            self:setmask(8, y + self.width - 7)
-        end
-
+        for y = 0, 6 do self:setmask(8, y + self.width - 7) end
         -- timing row/col
         for x = 0, self.width - 14 - 1 do
             if bit32.band(x, 1) == 1 then
@@ -278,12 +241,6 @@ function Qr:genframe()
                 self.frame[6 + self.width * (8 + x)] = true
             end
         end
-
-        -- version block
-        if self.version > 6 then
-            -- Removed: not needed for MAX_QR_VERSION = 4
-        end
-
         -- sync mask bits - only set above for white spaces, so add in black bits
         for y = 0, self.width - 1 do
             for x = 0, y do --inclusive
@@ -292,36 +249,24 @@ function Qr:genframe()
                 end
             end
         end
-
-        print("QR: finished basic fill")
-        self.progress = self.progress + 1
-        if (getUsage() > 50) then return end
+        self.progress = 5
+        if getUsage() > 50 then return end
     end
 
-    if self.progress == 5 then
-        -- convert string to bitstream
-        -- 8 bit data to QR-coded 8 bit data (numeric or alphanum, or kanji not supported)
+    if self.progress == 5 then --encode data
         local v = #self.inputstr
-
-        -- string to array (only populate eccbuf, not strinbuf)
-        for i = 0, v - 1 do --we'll force lua tables to use 0-start addressing
-            self.eccbuf[i] = string.byte(self.inputstr, i + 1) --adjust for 1-based lua stdlib numbering
+        for i = 0, v - 1 do
+            self.eccbuf[i] = string.byte(self.inputstr, i + 1)
         end
-
-        -- calculate max string length
         self.maxlength = self.datablkw * (self.neccblk1 + self.neccblk2) + self.neccblk2
-        if (v >= self.maxlength - 2) then
+        if v >= self.maxlength - 2 then
             v = self.maxlength - 2
-            if (self.version > 9) then
-                v = v - 1
-            end
+            if self.version > 9 then v = v - 1 end
         end
-
         -- shift and repack to insert length prefix
-        if (self.version > 9) then
+        if self.version > 9 then
             local i = v
-            self.eccbuf[i + 2] = 0
-            self.eccbuf[i + 3] = 0
+            self.eccbuf[i + 2], self.eccbuf[i + 3] = 0, 0
             while i > 0 do
                 i = i - 1
                 local t = self.eccbuf[i]
@@ -333,8 +278,7 @@ function Qr:genframe()
             self.eccbuf[0] = bit32.bor(0x40, bit32.rshift(v, 12))
         else
             local i = v
-            self.eccbuf[i + 1] = 0
-            self.eccbuf[i + 2] = 0
+            self.eccbuf[i + 1], self.eccbuf[i + 2] = 0, 0
             while i > 0 do
                 i = i - 1
                 local t = self.eccbuf[i]
@@ -344,32 +288,26 @@ function Qr:genframe()
             self.eccbuf[1] = bit32.bor(self.eccbuf[1], bit32.band(255, bit32.lshift(v, 4)))
             self.eccbuf[0] = bit32.bor(0x40, bit32.rshift(v, 4))
         end
-
         -- fill to end with pad pattern
         for i = v + 3 - (self.version < 10 and 1 or 0), self.maxlength - 1, 2 do
-            self.eccbuf[i] = 0xec
-            self.eccbuf[i + 1] = 0x11
+            self.eccbuf[i], self.eccbuf[i + 1] = 0xec, 0x11
         end
-        print("QR: finished bitstream")
-        self.progress = self.progress + 1
+        self.progress = 6
         collectgarbage()
-        if (getUsage() > 50) then return end
+        if getUsage() > 50 then return end
     end
 
-    if self.progress == 6 then
-        -- calculate and append ECC
-        -- calculate generator polynomial
-        if self.resume == nil then --first time through
-            self.genpoly[0] = 1;
-            self.resume = {i=0, j=0} -- Reuse for both loops
+    if self.progress == 6 then --generate ECC
+        if self.resume == nil then
+            self.genpoly[0] = 1
+            self.resume = {i=0, j=0}
         end
         local tmp = self.resume
         for i = tmp.i, self.eccblkwid - 1 do
             tmp.i = i
             if getUsage() > 40 then return end
-            self.genpoly[i + 1] = 1;
+            self.genpoly[i + 1] = 1
             for j = i, 1, -1 do
-                -- Inline glogLookup and gexpLookup
                 local idx = math.max(1, 1 + self.genpoly[j])
                 local glog_val = (idx > #GLOG_LOOKUP) and nil or string.byte(GLOG_LOOKUP, idx)
                 if self.genpoly[j] >= 1 and glog_val then
@@ -380,7 +318,6 @@ function Qr:genframe()
                     self.genpoly[j] = self.genpoly[j - 1]
                 end
             end
-            -- Inline for genpoly[0]
             local idx = math.max(1, 1 + self.genpoly[0])
             local glog_val = (idx > #GLOG_LOOKUP) and nil or string.byte(GLOG_LOOKUP, idx)
             local exp_idx = math.max(1, 1 + self:modnn((glog_val or 0) + i))
@@ -390,30 +327,22 @@ function Qr:genframe()
         for j = tmp.j, self.eccblkwid do --inclusive
             tmp.j = j
             if getUsage() > 40 then return end
-            -- Inline glogLookup
             local idx = math.max(1, 1 + self.genpoly[j])
             self.genpoly[j] = (idx > #GLOG_LOOKUP) and nil or string.byte(GLOG_LOOKUP, idx)
         end
-        -- don't clear context, next step wants the lookup tables
-        if table ~= nil then print("QR: genpoly", table.unpack(self.genpoly)) end --desktop only
-        print("QR: finished generator polynomial")
-        -- Clear resume for next step to reuse
         self.resume = nil
-        self.progress = self.progress + 1
+        self.progress = 7
         collectgarbage()
-        if (getUsage() > 50) then return end
+        if getUsage() > 50 then return end
     end
 
-    if self.progress == 7 then
-        -- append ecc to data buffer
+    if self.progress == 7 then --append ecc to data buffer
         if self.resume == nil then
             self.resume = {blk=0, j=0, k=self.maxlength, y=0, id=nil}
         end
         local tmp = self.resume
         for blk = tmp.blk, 1 do
             for j = tmp.j, (blk == 0 and self.neccblk1 or self.neccblk2) - 1 do
-                -- Calculate and append ECC data to data block.  Block is in eccbuf, indexes to buffers given.
-                --appendrs function, inlined:
                 if tmp.id == nil then
                     for id = 0, self.eccblkwid - 1 do
                         self.eccbuf[tmp.k + id] = 0
@@ -423,13 +352,11 @@ function Qr:genframe()
                 for id = tmp.id, self.datablkw + blk - 1 do
                     tmp.id = id
                     if getUsage() > 60 then return end
-                    -- Inline glogLookup
                     local xor_val = bit32.bxor(self.eccbuf[tmp.y + id], self.eccbuf[tmp.k])
                     local idx = math.max(1, 1 + xor_val)
                     local fb = (idx > #GLOG_LOOKUP) and nil or string.byte(GLOG_LOOKUP, idx)
-                    if fb ~= 255 then     --fb term is non-zero
+                    if fb ~= 255 then
                         for jd = 1, self.eccblkwid - 1 do
-                            -- Inline gexpLookup
                             local exp_idx = math.max(1, 1 + self:modnn(fb + self.genpoly[self.eccblkwid - jd]))
                             local exp_val = (exp_idx > #GEXP_LOOKUP) and nil or string.byte(GEXP_LOOKUP, exp_idx)
                             self.eccbuf[tmp.k + jd - 1] = bit32.bxor(self.eccbuf[tmp.k + jd], exp_val or 0)
@@ -439,7 +366,6 @@ function Qr:genframe()
                             self.eccbuf[jd] = self.eccbuf[jd + 1]
                         end
                     end
-                    -- Inline gexpLookup for final value
                     if fb == 255 then
                         self.eccbuf[tmp.k + self.eccblkwid - 1] = 0
                     else
@@ -454,20 +380,15 @@ function Qr:genframe()
             end
             tmp.blk = blk
         end
-        print("QR: finished appending ecc")
         self.resume = nil
         self.genpoly = nil  -- Clear generator polynomial, no longer needed
-        self.progress = self.progress + 1
+        self.progress = 8
         collectgarbage()
-        if (getUsage() > 50) then return end
+        if getUsage() > 50 then return end
     end
 
-    if self.progress == 8 then
-        -- interleave blocks
-        -- Use a temporary buffer for interleaving
-        local tempbuf = {}
-        local y = 0;
-        local iback = 0
+    if self.progress == 8 then --interleave data+ECC bytes blocks
+        local tempbuf, y, iback = {}, 0, 0
         for i = 0, self.datablkw - 1 do
             for j = 0, self.neccblk1 - 1 do
                 tempbuf[y] = self.eccbuf[i + j * self.datablkw]
@@ -489,27 +410,21 @@ function Qr:genframe()
                 y = y + 1
             end
         end
-        -- Copy back to eccbuf
         self.eccbuf = tempbuf
+        self.progress = 9
         collectgarbage()
-
-        print("QR: finished interleaving blocks")
-        self.progress = self.progress + 1
-        if (getUsage() > 50) then return end
+        if getUsage() > 50 then return end
     end
 
-    if self.progress == 9 then
-        -- pack bits into frame avoiding masked area.
+    if self.progress == 9 then --pack bits into frame avoiding masked area
         if self.resume == nil then
             self.resume = {x = self.width - 1, y = self.width - 1, v = true, k = true, i = 0}
         end
-        local tmp = self.resume --shorter name..
-        -- inteleaved data and ecc codes
-        local m = (self.datablkw + self.eccblkwid) * (self.neccblk1 + self.neccblk2) + self.neccblk2;
+        local tmp = self.resume
+        local m = (self.datablkw + self.eccblkwid) * (self.neccblk1 + self.neccblk2) + self.neccblk2
         for i = self.resume.i, m - 1 do
             self.resume.i = i
-            if (getUsage() > 80) then return end
-
+            if getUsage() > 80 then return end
             local t = self.eccbuf[i]
             for j = 0, 7 do
                 if bit32.band(0x80, t) >= 1 then
@@ -524,11 +439,10 @@ function Qr:genframe()
                             if tmp.y ~= 0 then
                                 tmp.y = tmp.y - 1
                             else
-                                tmp.x = tmp.x - 2;
-                                tmp.k = not tmp.k;
+                                tmp.x = tmp.x - 2
+                                tmp.k = not tmp.k
                                 if tmp.x == 6 then
-                                    tmp.x = tmp.x - 1
-                                    tmp.y = 9;
+                                    tmp.x, tmp.y = tmp.x - 1, 9
                                 end
                             end
                         else
@@ -538,57 +452,41 @@ function Qr:genframe()
                                 tmp.x = tmp.x - 2
                                 tmp.k = not tmp.k
                                 if tmp.x == 6 then
-                                    tmp.x = tmp.x - 1
-                                    tmp.y = tmp.y - 8;
+                                    tmp.x, tmp.y = tmp.x - 1, tmp.y - 8
                                 end
                             end
                         end
                     end
-                    tmp.v = not tmp.v;
-                    if not self:ismasked(tmp.x, tmp.y) then
-                        break
-                    end
+                    tmp.v = not tmp.v
+                    if not self:ismasked(tmp.x, tmp.y) then break end
                 end
                 t = bit32.lshift(t, 1)
             end
         end
         self.eccbuf = nil  -- Clear eccbuf, no longer needed
-        print("QR: finished packing")
         self.resume = nil
-        self.progress = self.progress + 1
+        self.progress = 10
         collectgarbage()
-        if (getUsage() > 50) then return end
+        if getUsage() > 50 then return end
     end
 
-    if self.progress == 10 then
+    if self.progress == 10 then --apply mask pattern
         collectgarbage()
-
-        if self.resume == nil then
-            self.resume = 0
-        end
-        -- Apply mask pattern 0 directly
+        if self.resume == nil then self.resume = 0 end
         for y = self.resume, self.width - 1 do
             self.resume = y
-            if (getUsage() > 60) then return end
+            if getUsage() > 60 then return end
             for x = 0, self.width - 1 do
                 if bit32.band((x + y), 1) == 0 and not self:ismasked(x, y) then
-                    -- Inline xorEqls
                     local idx = x + y * self.width
                     self.frame[idx] = (self.frame[idx] ~= true) and true or nil
                 end
             end
         end
-
-        -- Clear framask immediately after masking is complete, before final formatting
         self.framask = nil
         collectgarbage()
-
         self.resume = nil
-        -- Removed badcheck - unused
-
         -- add in final mask/ecclevel bytes
-        -- t is always 0 (mask pattern 0)
-        -- low byte
         local y = FMTWORD_LOOKUP[1 + bit32.lshift(0 + (self.ecclevel - 1), 3)]
         for bit = 0, 7 do
             if bit32.band(y, 1) == 1 then
@@ -597,7 +495,6 @@ function Qr:genframe()
             end
             y = bit32.rshift(y, 1)
         end
-        -- high byte
         for bit = 0, 6 do
             if bit32.band(y, 1) == 1 then
                 self.frame[8 + self.width * (self.width - 7 + bit)] = true
@@ -605,7 +502,6 @@ function Qr:genframe()
             end
             y = bit32.rshift(y, 1)
         end
-        print("QR: finished adding final ecc/level info")
         self.progress = 0
         self:reset(true) --partial reset, don't reset frame & width
         self.isvalid = true
@@ -662,7 +558,6 @@ end
 
 local function background()
     if lastBGloopc == loopc and not doRedraw then
-        print("Qr: backgrounded!")
         doRedraw = true
         ctx.qr:reset()
     end
@@ -679,24 +574,18 @@ local function run(event)
         end
         local location = getGps()
         local newStr = prefixes[prefixIndex] .. location
-        if continuous and (newStr ~= ctx.qr.inputstr) and (not ctx.qr:isRunning()) then
-            if ((loopc - ctx.loopStart) > continuousFrameInterval) then
-                event = EVT_ENTER_BREAK --starts new qr code down below
-            end
+        if continuous and (newStr ~= ctx.qr.inputstr) and (not ctx.qr:isRunning()) and ((loopc - ctx.loopStart) > continuousFrameInterval) then
+            event = EVT_ENTER_BREAK
         end
-        --TODO if contains // replace , with %2C
         local qrXoffset = math.floor((LCD_W - ctx.pxlSize * (ctx.qr.width + 2)) / 2)
-
-        --draw text & progress bar
         lcd.drawText(0, LCD_H - 8, newStr, SMLSIZE)
         if ctx.qr:isRunning() then --draw progress bar
-            -- lcd.drawFilledRectangle(qrXoffset, (continuous and (LCD_H - 14) or 20), ctx.pxlSize * ctx.qr.width, 5, ERASE)
             lcd.drawGauge(qrXoffset, (continuous and (LCD_H - 14) or 20), ctx.pxlSize * ctx.qr.width, 5, ctx.qr.progress, 10)
             lcd.drawText(LCD_W, LCD_H - 8, tostring(ctx.qr.progress), SMLSIZE + LEFT)
         end
-        if ctx.loopEnd ~= 0 then lcd.drawText(LCD_W, LCD_H - 8, string.format("c=%d", ctx.loopEnd - ctx.loopStart), SMLSIZE + LEFT) end
-
-        --draw qr code!
+        if ctx.loopEnd ~= 0 then
+            lcd.drawText(LCD_W, LCD_H - 8, string.format("c=%d", ctx.loopEnd - ctx.loopStart), SMLSIZE + LEFT)
+        end
         if doRedraw and ctx.qr.isvalid then
             doRedraw = false
             ctx.qr:draw(qrXoffset, 0, ctx.pxlSize)
@@ -731,7 +620,7 @@ local function run(event)
         function printFrame(buffer, width, back, fill)
             back = back or "  "
             fill = fill or "##"
-            for i = -3, width + 2 do
+            for i = -2, width + 1 do
                 local line = ""
                 for j = 0, width - 1 do
                     if i < 0 or i >= width then
@@ -740,7 +629,7 @@ local function run(event)
                         line = line .. ((buffer[j * width + i] == true) and fill or back)
                     end
                 end
-                print(i, back .. back .. back .. line .. back .. back .. back)
+                print(back .. back .. back .. line .. back .. back .. back)
             end
         end
     end
@@ -751,13 +640,12 @@ local function run(event)
         if ctx.qr:genframe() then
             ctx.loopEnd = loopc
             doRedraw = true
-            print("JUST FINISHED QR")
             if lcd ~= nil then
-                ctx.pxlSize = math.min(math.floor(math.min(LCD_H, LCD_H) / (ctx.qr.width + 2))) --calculate QR pixel size
+                ctx.pxlSize = math.min(math.floor(math.min(LCD_H, LCD_H) / (ctx.qr.width + 2)))
             else
                 printFrame(ctx.qr.frame, ctx.qr.width)
                 print("finished with usage:", getUsage(), "loops:", loopc)
-                return 1 --ends desktop script
+                return 1
             end
         end
         print("QR at frame", loopc, "progress", ctx.qr.progress, "load:", getUsage(), ctx.qr.isvalid and "valid" or "")
