@@ -526,6 +526,10 @@ local function background()
         doRedraw = true
         ctx.qr:reset()
     end
+    local location = getGps()
+    if location ~= nil then
+        ctx.lastValidPos = location
+    end
     lastBGloopc = loopc
 end
 
@@ -557,7 +561,7 @@ local function run(event)
         local displayStr = truncateStr(((location == nil) and "[X]" or "") .. newStr, math.floor(LCD_W / 5))
         lcd.drawText(LCD_W / 2, LCD_H - 8, displayStr, SMLSIZE + CENTER)
 
-        if ctx.qr:isRunning() then -- Show progress bar
+        if ctx.qr:isRunning() and not continuous then -- Show progress bar
             lcd.drawGauge(LCD_W/4, LCD_H - 14, LCD_W/2, 5, ctx.qr.progress, 10) --x,y,width,height, value, maxvalue
         elseif ctx.qr.isvalid and doRedraw then -- Show generated QR
             doRedraw = false
