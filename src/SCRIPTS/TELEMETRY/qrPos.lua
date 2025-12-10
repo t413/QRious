@@ -213,37 +213,33 @@ function Qr:genframe()
 
     if self.progress == 4 then --add timing patterns and reserve format area
         self.frame[8 + self.width * (self.width - 8)] = true
-        -- timing gap - mask only
-        for y = 0, 6 do
-            self:setmask(7, y)
-            self:setmask(self.width - 8, y)
-            self:setmask(7, y + self.width - 7)
-        end
-        for x = 0, 7 do
-            self:setmask(x, 7)
-            self:setmask(x + self.width - 8, 7)
-            self:setmask(x, self.width - 8)
-        end
-        -- reserve mask-format area
-        for x = 0, 8 do self:setmask(x, 8) end
-        for x = 0, 7 do
-            self:setmask(x + self.width - 8, 8)
-            self:setmask(8, x)
-        end
-        for y = 0, 6 do self:setmask(8, y + self.width - 7) end
-        -- timing row/col
-        for x = 0, self.width - 14 - 1 do
-            if bit32.band(x, 1) == 1 then
-                self:setmask(8 + x, 6)
-                self:setmask(6, 8 + x)
-            else
-                self.frame[(8 + x) + self.width * 6] = true
-                self.frame[6 + self.width * (8 + x)] = true
+        -- timing gap and reserve format area - mask only
+        for i = 0, 8 do
+            if i < 7 then
+                self:setmask(7, i)
+                self:setmask(self.width - 8, i)
+                self:setmask(7, i + self.width - 7)
             end
+            if i < 8 then
+                self:setmask(i, 7)
+                self:setmask(i + self.width - 8, 7)
+                self:setmask(i, self.width - 8)
+                self:setmask(i + self.width - 8, 8)
+                self:setmask(8, i)
+            end
+            self:setmask(i, 8)
+            if i < 7 then self:setmask(8, i + self.width - 7) end
         end
-        -- sync mask bits - only set above for white spaces, so add in black bits
+        -- timing row/col
+        for x = 0, self.width - 15, 2 do
+            self:setmask(9 + x, 6)
+            self:setmask(6, 9 + x)
+            self.frame[(8 + x) + self.width * 6] = true
+            self.frame[6 + self.width * (8 + x)] = true
+        end
+        -- sync mask bits
         for y = 0, self.width - 1 do
-            for x = 0, y do --inclusive
+            for x = 0, y do
                 if self.frame[x + self.width * y] == true then
                     self:setmask(x, y)
                 end
@@ -263,31 +259,22 @@ function Qr:genframe()
             v = self.maxlength - 2
             if self.version > 9 then v = v - 1 end
         end
-        -- shift and repack to insert length prefix
-        if self.version > 9 then
-            local i = v
-            self.eccbuf[i + 2], self.eccbuf[i + 3] = 0, 0
-            while i > 0 do
-                i = i - 1
-                local t = self.eccbuf[i]
-                self.eccbuf[i + 3] = bit32.bor(self.eccbuf[i + 3], bit32.band(255, bit32.lshift(t, 4)))
-                self.eccbuf[i + 2] = bit32.rshift(t, 4)
-            end
-            self.eccbuf[2] = bit32.bor(self.eccbuf[2], bit32.band(255, bit32.lshift(v, 4)))
-            self.eccbuf[1] = bit32.rshift(v, 4)
-            self.eccbuf[0] = bit32.bor(0x40, bit32.rshift(v, 12))
-        else
-            local i = v
-            self.eccbuf[i + 1], self.eccbuf[i + 2] = 0, 0
-            while i > 0 do
-                i = i - 1
-                local t = self.eccbuf[i]
-                self.eccbuf[i + 2] = bit32.bor(self.eccbuf[i + 2], bit32.band(255, bit32.lshift(t, 4)))
-                self.eccbuf[i + 1] = bit32.rshift(t, 4)
-            end
-            self.eccbuf[1] = bit32.bor(self.eccbuf[1], bit32.band(255, bit32.lshift(v, 4)))
-            self.eccbuf[0] = bit32.bor(0x40, bit32.rshift(v, 4))
+        if self.version > 9 then --not supported, error
+            self.progress = nil
+            return
         end
+        -- shift and repack to insert length prefix
+        local i = v
+        self.eccbuf[i + 1], self.eccbuf[i + 2] = 0, 0
+        while i > 0 do
+            i = i - 1
+            local t = self.eccbuf[i]
+            self.eccbuf[i + 2] = bit32.bor(self.eccbuf[i + 2], bit32.band(255, bit32.lshift(t, 4)))
+            self.eccbuf[i + 1] = bit32.rshift(t, 4)
+        end
+        self.eccbuf[1] = bit32.bor(self.eccbuf[1], bit32.band(255, bit32.lshift(v, 4)))
+        self.eccbuf[0] = bit32.bor(0x40, bit32.rshift(v, 4))
+
         -- fill to end with pad pattern
         for i = v + 3 - (self.version < 10 and 1 or 0), self.maxlength - 1, 2 do
             self.eccbuf[i], self.eccbuf[i + 1] = 0xec, 0x11
@@ -308,27 +295,16 @@ function Qr:genframe()
             if getUsage() > 40 then return end
             self.genpoly[i + 1] = 1
             for j = i, 1, -1 do
-                local idx = math.max(1, 1 + self.genpoly[j])
-                local glog_val = (idx > #GLOG_LOOKUP) and nil or string.byte(GLOG_LOOKUP, idx)
-                if self.genpoly[j] >= 1 and glog_val then
-                    local exp_idx = math.max(1, 1 + self:modnn(glog_val + i))
-                    local exp_val = (exp_idx > #GEXP_LOOKUP) and nil or string.byte(GEXP_LOOKUP, exp_idx)
-                    self.genpoly[j] = bit32.bxor(self.genpoly[j - 1], exp_val or 0)
-                else
-                    self.genpoly[j] = self.genpoly[j - 1]
-                end
+                local glog_val = self.genpoly[j] >= 1 and string.byte(GLOG_LOOKUP, math.max(1, 1 + self.genpoly[j]))
+                self.genpoly[j] = glog_val and bit32.bxor(self.genpoly[j - 1], string.byte(GEXP_LOOKUP, math.max(1, 1 + self:modnn(glog_val + i)))) or self.genpoly[j - 1]
             end
-            local idx = math.max(1, 1 + self.genpoly[0])
-            local glog_val = (idx > #GLOG_LOOKUP) and nil or string.byte(GLOG_LOOKUP, idx)
-            local exp_idx = math.max(1, 1 + self:modnn((glog_val or 0) + i))
-            self.genpoly[0] = (exp_idx > #GEXP_LOOKUP) and nil or string.byte(GEXP_LOOKUP, exp_idx)
+            local glog_val = string.byte(GLOG_LOOKUP, math.max(1, 1 + self.genpoly[0]))
+            self.genpoly[0] = string.byte(GEXP_LOOKUP, math.max(1, 1 + self:modnn(glog_val + i)))
         end
-        tmp.i = tmp.i + 1 --increment once more
-        for j = tmp.j, self.eccblkwid do --inclusive
+        for j = tmp.j, self.eccblkwid do
             tmp.j = j
             if getUsage() > 40 then return end
-            local idx = math.max(1, 1 + self.genpoly[j])
-            self.genpoly[j] = (idx > #GLOG_LOOKUP) and nil or string.byte(GLOG_LOOKUP, idx)
+            self.genpoly[j] = string.byte(GLOG_LOOKUP, math.max(1, 1 + self.genpoly[j]))
         end
         self.resume = nil
         self.progress = 7
@@ -353,24 +329,17 @@ function Qr:genframe()
                     tmp.id = id
                     if getUsage() > 60 then return end
                     local xor_val = bit32.bxor(self.eccbuf[tmp.y + id], self.eccbuf[tmp.k])
-                    local idx = math.max(1, 1 + xor_val)
-                    local fb = (idx > #GLOG_LOOKUP) and nil or string.byte(GLOG_LOOKUP, idx)
-                    if fb ~= 255 then
+                    local fb = xor_val < 255 and string.byte(GLOG_LOOKUP, xor_val + 1) or nil
+                    if fb and fb ~= 255 then
                         for jd = 1, self.eccblkwid - 1 do
-                            local exp_idx = math.max(1, 1 + self:modnn(fb + self.genpoly[self.eccblkwid - jd]))
-                            local exp_val = (exp_idx > #GEXP_LOOKUP) and nil or string.byte(GEXP_LOOKUP, exp_idx)
-                            self.eccbuf[tmp.k + jd - 1] = bit32.bxor(self.eccbuf[tmp.k + jd], exp_val or 0)
+                            self.eccbuf[tmp.k + jd - 1] = bit32.bxor(self.eccbuf[tmp.k + jd], string.byte(GEXP_LOOKUP, 1 + self:modnn(fb + self.genpoly[self.eccblkwid - jd])))
                         end
+                        self.eccbuf[tmp.k + self.eccblkwid - 1] = string.byte(GEXP_LOOKUP, 1 + self:modnn(fb + self.genpoly[0]))
                     else
-                        for jd = tmp.k, tmp.k + self.eccblkwid - 1 do
+                        for jd = tmp.k, tmp.k + self.eccblkwid - 2 do
                             self.eccbuf[jd] = self.eccbuf[jd + 1]
                         end
-                    end
-                    if fb == 255 then
                         self.eccbuf[tmp.k + self.eccblkwid - 1] = 0
-                    else
-                        local exp_idx = math.max(1, 1 + self:modnn(fb + self.genpoly[0]))
-                        self.eccbuf[tmp.k + self.eccblkwid - 1] = (exp_idx > #GEXP_LOOKUP) and nil or string.byte(GEXP_LOOKUP, exp_idx)
                     end
                 end
                 tmp.id = nil
@@ -388,7 +357,7 @@ function Qr:genframe()
     end
 
     if self.progress == 8 then --interleave data+ECC bytes blocks
-        local tempbuf, y, iback = {}, 0, 0
+        local tempbuf, y = {}, 0
         for i = 0, self.datablkw - 1 do
             for j = 0, self.neccblk1 - 1 do
                 tempbuf[y] = self.eccbuf[i + j * self.datablkw]
@@ -398,10 +367,9 @@ function Qr:genframe()
                 tempbuf[y] = self.eccbuf[(self.neccblk1 * self.datablkw) + i + (j * (self.datablkw + 1))]
                 y = y + 1
             end
-            iback = i
         end
         for j = 0, self.neccblk2 - 1 do
-            tempbuf[y] = self.eccbuf[(self.neccblk1 * self.datablkw) + iback + (j * (self.datablkw + 1))]
+            tempbuf[y] = self.eccbuf[(self.neccblk1 * self.datablkw) + self.datablkw - 1 + (j * (self.datablkw + 1))]
             y = y + 1
         end
         for i = 0, self.eccblkwid - 1 do
@@ -422,44 +390,31 @@ function Qr:genframe()
         end
         local tmp = self.resume
         local m = (self.datablkw + self.eccblkwid) * (self.neccblk1 + self.neccblk2) + self.neccblk2
-        for i = self.resume.i, m - 1 do
-            self.resume.i = i
+        for i = tmp.i, m - 1 do
+            tmp.i = i
             if getUsage() > 80 then return end
             local t = self.eccbuf[i]
             for j = 0, 7 do
                 if bit32.band(0x80, t) >= 1 then
                     self.frame[tmp.x + self.width * tmp.y] = true
                 end
-                while true do   -- find next fill position
-                    if tmp.v then
-                        tmp.x = tmp.x - 1
-                    else
+                repeat   -- find next fill position
+                    if tmp.v then tmp.x = tmp.x - 1 else
                         tmp.x = tmp.x + 1
                         if tmp.k then
-                            if tmp.y ~= 0 then
-                                tmp.y = tmp.y - 1
-                            else
-                                tmp.x = tmp.x - 2
-                                tmp.k = not tmp.k
-                                if tmp.x == 6 then
-                                    tmp.x, tmp.y = tmp.x - 1, 9
-                                end
+                            if tmp.y ~= 0 then tmp.y = tmp.y - 1 else
+                                tmp.x, tmp.k = tmp.x - 2, false
+                                if tmp.x == 6 then tmp.x, tmp.y = 5, 9 end
                             end
                         else
-                            if tmp.y ~= (self.width - 1) then
-                                tmp.y = tmp.y + 1
-                            else
-                                tmp.x = tmp.x - 2
-                                tmp.k = not tmp.k
-                                if tmp.x == 6 then
-                                    tmp.x, tmp.y = tmp.x - 1, tmp.y - 8
-                                end
+                            if tmp.y ~= self.width - 1 then tmp.y = tmp.y + 1 else
+                                tmp.x, tmp.k = tmp.x - 2, true
+                                if tmp.x == 6 then tmp.x, tmp.y = 5, tmp.y - 8 end
                             end
                         end
                     end
                     tmp.v = not tmp.v
-                    if not self:ismasked(tmp.x, tmp.y) then break end
-                end
+                until not self:ismasked(tmp.x, tmp.y)
                 t = bit32.lshift(t, 1)
             end
         end
