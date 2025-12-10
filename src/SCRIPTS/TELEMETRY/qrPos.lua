@@ -635,16 +635,23 @@ end
 
 if lcd == nil then
     local startTime
+    local argIndex = 1  -- Track which argument we're processing
     function getUsage()
         return math.floor((os.clock() - startTime) * 500000)
     end
     init()
-    for i = 0, 100 do
-        startTime = os.clock()
-        if run() == 1 then return end
-        repeat until (os.clock() - startTime) > 0.01
-   end
-    print("end running")
+    while argIndex <= #arg do -- Process each command line argument
+        local inputStr = arg[argIndex]
+        print(string.format("\n=== Generating QR #%d: '%s' ===", argIndex, inputStr))
+        ctx.qr:start(inputStr)
+        loopc = 0
+        for i = 0, 100 do -- Run until this QR completes
+            startTime = os.clock()
+            if run() == 1 then break end
+            repeat until (os.clock() - startTime) > 0.01
+        end
+        argIndex = argIndex + 1
+    end
 end
 
 return { init=init, run = run, background=background, qr=Qr, getGps=getGps }
