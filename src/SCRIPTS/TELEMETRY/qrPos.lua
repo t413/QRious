@@ -508,6 +508,14 @@ local function getGps()
     end
 end
 
+function truncateStr(str, maxLen)
+    if #str > maxLen then
+        return string.sub(str, 1, maxLen - 2) .. ".."
+    else
+        return str
+    end
+end
+
 local function init()
     ctx.qr = Qr:new() --creates instance from prototype
     Qr = nil --delete prototype
@@ -546,7 +554,8 @@ local function run(event)
             event = EVT_ENTER_BREAK --simulate enter press to redraw qr
         end
         -- Always show current string at bottom
-        lcd.drawText(LCD_W / 2, LCD_H - 8, ((location == nil) and "[X]" or "") .. newStr, SMLSIZE + CENTER)
+        local displayStr = truncateStr(((location == nil) and "[X]" or "") .. newStr, math.floor(LCD_W / 5))
+        lcd.drawText(LCD_W / 2, LCD_H - 8, displayStr, SMLSIZE + CENTER)
 
         if ctx.qr:isRunning() then -- Show progress bar
             lcd.drawGauge(LCD_W/4, LCD_H - 14, LCD_W/2, 5, ctx.qr.progress, 10) --x,y,width,height, value, maxvalue
