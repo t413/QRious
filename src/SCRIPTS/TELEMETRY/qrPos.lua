@@ -65,12 +65,12 @@ end
 
 --black to qrframe, white to mask (later black frame merged to mask)
 function Qr:putalign(x, y)
-    self.frame[x + self.width * y] = true
+    self:setFrame(x + self.width * y)
     for j = -2, 2 - 1 do
-        self.frame[(x + j)     + self.width * (y - 2    )] = true;
-        self.frame[(x - 2)     + self.width * (y + j + 1)] = true;
-        self.frame[(x + 2)     + self.width * (y + j    )] = true;
-        self.frame[(x + j + 1) + self.width * (y + 2    )] = true;
+        self:setFrame((x + j)     + self.width * (y - 2    ))
+        self:setFrame((x - 2)     + self.width * (y + j + 1))
+        self:setFrame((x + 2)     + self.width * (y + j    ))
+        self:setFrame((x + j + 1) + self.width * (y + 2    ))
     end
     for j = 0, 2 - 1 do
         self:setmask(x - 1, y + j);
@@ -112,6 +112,23 @@ function Qr:ismasked(x, y)
     end
     bt = bit32.rshift((y * y) + y, 1) + x
     return self.framask[bt] == true
+end
+
+-- bit packed frame set/get
+function Qr:setFrame(idx, boolval)
+    if boolval == nil then boolval = true end  -- Default to true
+    local word = bit32.rshift(idx, 5)  -- idx / 32
+    local bit = bit32.band(idx, 31)     -- idx % 32
+    if boolval then
+        self.frame[word] = bit32.bor(self.frame[word] or 0, bit32.lshift(1, bit))
+    else
+        self.frame[word] = bit32.band(self.frame[word] or 0, bit32.bnot(bit32.lshift(1, bit)))
+    end
+end
+function Qr:getFrame(idx)
+    local word = bit32.rshift(idx, 5)
+    local bit = bit32.band(idx, 31)
+    return bit32.band(self.frame[word] or 0, bit32.lshift(1, bit)) ~= 0
 end
 
 --Generate QR frame array
@@ -159,16 +176,19 @@ function Qr:genframe()
         -- insert finders - black to frame, white to mask
         self.framask = {}
         self.frame = {}
+        local numWords = math.ceil(self.width * self.width / 32) -- bitpacked words
+        for i = 0, numWords - 1 do self.frame[i] = 0 end -- init bitpacked frame array
+
         for t = 0, 2 do
             local k, y = 0, 0
             if t == 1 then k = self.width - 7 end
             if t == 2 then y = self.width - 7 end
-            self.frame[(y + 3) + self.width * (k + 3)] = true
+            self:setFrame((y + 3) + self.width * (k + 3))
             for x = 0, 5 do
-                self.frame[(y + x) + self.width * k] = true
-                self.frame[y + self.width * (k + x + 1)] = true
-                self.frame[(y + 6) + self.width * (k + x)] = true
-                self.frame[(y + x + 1) + self.width * (k + 6)] = true
+                self:setFrame((y + x) + self.width * k)
+                self:setFrame(y + self.width * (k + x + 1))
+                self:setFrame((y + 6) + self.width * (k + x))
+                self:setFrame((y + x + 1) + self.width * (k + 6))
             end
             for x = 1, 4 do
                 self:setmask(y + x, k + 1)
@@ -177,10 +197,10 @@ function Qr:genframe()
                 self:setmask(y + x + 1, k + 5)
             end
             for x = 2, 3 do
-                self.frame[(y + x) + self.width * (k + 2)] = true
-                self.frame[(y + 2) + self.width * (k + x + 1)] = true
-                self.frame[(y + 4) + self.width * (k + x)] = true
-                self.frame[(y + x + 1) + self.width * (k + 4)] = true
+                self:setFrame((y + x) + self.width * (k + 2))
+                self:setFrame((y + 2) + self.width * (k + x + 1))
+                self:setFrame((y + 4) + self.width * (k + x))
+                self:setFrame((y + x + 1) + self.width * (k + 4))
             end
         end
         -- alignment blocks
@@ -201,39 +221,73 @@ function Qr:genframe()
     end
 
     if self.progress == 4 then --add timing patterns and reserve format area
-        self.frame[8 + self.width * (self.width - 8)] = true
-        -- timing gap and reserve format area - mask only
-        for i = 0, 8 do
-            if i < 7 then
-                self:setmask(7, i)
-                self:setmask(self.width - 8, i)
-                self:setmask(7, i + self.width - 7)
-            end
-            if i < 8 then
-                self:setmask(i, 7)
-                self:setmask(i + self.width - 8, 7)
-                self:setmask(i, self.width - 8)
-                self:setmask(i + self.width - 8, 8)
-                self:setmask(8, i)
-            end
-            self:setmask(i, 8)
-            if i < 7 then self:setmask(8, i + self.width - 7) end
+        if self.resume == nil then
+            self.resume = {step = 1, y = 0, x = 0}
         end
-        -- timing row/col
-        for x = 0, self.width - 15, 2 do
-            self:setmask(9 + x, 6)
-            self:setmask(6, 9 + x)
-            self.frame[(8 + x) + self.width * 6] = true
-            self.frame[6 + self.width * (8 + x)] = true
+        local tmp = self.resume
+
+        -- Step 1: Set dark module
+        if tmp.step == 1 then
+            self:setFrame(8 + self.width * (self.width - 8))
+            tmp.step = 2
         end
-        -- sync mask bits
-        for y = 0, self.width - 1 do
-            for x = 0, y do
-                if self.frame[x + self.width * y] == true then
-                    self:setmask(x, y)
+
+        -- Step 2: Timing gap and reserve format area - mask only
+        if tmp.step == 2 then
+            for i = 0, 8 do
+                if getUsage() > 60 then return end
+                if i < 7 then
+                    self:setmask(7, i)
+                    self:setmask(self.width - 8, i)
+                    self:setmask(7, i + self.width - 7)
                 end
+                if i < 8 then
+                    self:setmask(i, 7)
+                    self:setmask(i + self.width - 8, 7)
+                    self:setmask(i, self.width - 8)
+                    self:setmask(i + self.width - 8, 8)
+                    self:setmask(8, i)
+                end
+                self:setmask(i, 8)
+                if i < 7 then self:setmask(8, i + self.width - 7) end
+            end
+            tmp.step = 3
+            tmp.x = 0
+        end
+
+        -- Step 3: Timing row/col
+        if tmp.step == 3 then
+            for x = tmp.x, self.width - 15, 2 do
+                tmp.x = x
+                if getUsage() > 60 then return end
+                self:setmask(9 + x, 6)
+                self:setmask(6, 9 + x)
+                self:setFrame((8 + x) + self.width * 6)
+                self:setFrame(6 + self.width * (8 + x))
+            end
+            tmp.step = 4
+            tmp.y = 0
+            tmp.x = 0
+        end
+
+        -- Step 4: Sync mask bits (EXPENSIVE - nested loop)
+        if tmp.step == 4 then
+            for y = tmp.y, self.width - 1 do
+                tmp.y = y
+                if getUsage() > 60 then return end
+                for x = tmp.x, y do
+                    tmp.x = x
+                    if getUsage() > 70 then return end -- Check inside inner loop too
+                    local idx = x + self.width * y
+                    if self:getFrame(idx) then
+                        self:setmask(x, y)
+                    end
+                end
+                tmp.x = 0 -- Reset x for next y iteration
             end
         end
+
+        self.resume = nil
         self.progress = 5
         if getUsage() > 50 then return end
     end
@@ -285,16 +339,21 @@ function Qr:genframe()
             if getUsage() > 40 then return end
             self.genpoly[i + 1] = 1
             for j = i, 1, -1 do
-                local glog_val = self.genpoly[j] >= 1 and string.byte(GLOG_LOOKUP, math.max(1, 1 + self.genpoly[j]))
-                self.genpoly[j] = glog_val and bit32.bxor(self.genpoly[j - 1], string.byte(GEXP_LOOKUP, math.max(1, 1 + self:modnn(glog_val + i)))) or self.genpoly[j - 1]
+                if (self.genpoly[j] or 0) >= 1 then
+                    local glog_val = string.byte(GLOG_LOOKUP, 1 + self.genpoly[j])
+                    local gexp_val = string.byte(GEXP_LOOKUP, 1 + self:modnn(glog_val + i))
+                    self.genpoly[j] = bit32.bxor(self.genpoly[j - 1] or 0, gexp_val)
+                else
+                    self.genpoly[j] = self.genpoly[j - 1] or 0
+                end
             end
-            local glog_val = string.byte(GLOG_LOOKUP, math.max(1, 1 + self.genpoly[0]))
+            local glog_val = string.byte(GLOG_LOOKUP, math.max(1, 1 + (self.genpoly[0] or 0)))
             self.genpoly[0] = string.byte(GEXP_LOOKUP, math.max(1, 1 + self:modnn(glog_val + i)))
         end
         for j = tmp.j, self.eccblkwid do
             tmp.j = j
             if getUsage() > 40 then return end
-            self.genpoly[j] = string.byte(GLOG_LOOKUP, math.max(1, 1 + self.genpoly[j]))
+            self.genpoly[j] = string.byte(GLOG_LOOKUP, math.max(1, 1 + (self.genpoly[j] or 0)))
         end
         self.resume = nil
         self.progress = 7
@@ -386,7 +445,7 @@ function Qr:genframe()
             local t = self.eccbuf[i]
             for j = 0, 7 do
                 if bit32.band(0x80, t) >= 1 then
-                    self.frame[tmp.x + self.width * tmp.y] = true
+                    self:setFrame(tmp.x + self.width * tmp.y)
                 end
                 repeat   -- find next fill position
                     if tmp.v then tmp.x = tmp.x - 1 else
@@ -424,7 +483,7 @@ function Qr:genframe()
             for x = 0, self.width - 1 do
                 if bit32.band((x + y), 1) == 0 and not self:ismasked(x, y) then
                     local idx = x + y * self.width
-                    self.frame[idx] = (self.frame[idx] ~= true) and true or nil
+                    self:setFrame(idx, not self:getFrame(idx))
                 end
             end
         end
@@ -435,15 +494,15 @@ function Qr:genframe()
         local y = getFmtWord(bit32.lshift(0 + (self.ecclevel - 1), 3))
         for bit = 0, 7 do
             if bit32.band(y, 1) == 1 then
-                self.frame[(self.width - 1 - bit) + self.width * 8] = true
-                self.frame[8 + self.width * (bit + (bit < 6 and 0 or 1))] = true
+                self:setFrame((self.width - 1 - bit) + self.width * 8)
+                self:setFrame(8 + self.width * (bit + (bit < 6 and 0 or 1)))
             end
             y = bit32.rshift(y, 1)
         end
         for bit = 0, 6 do
             if bit32.band(y, 1) == 1 then
-                self.frame[8 + self.width * (self.width - 7 + bit)] = true
-                self.frame[((bit >= 1) and (6 - bit) or 7) + self.width * 8] = true
+                self:setFrame(8 + self.width * (self.width - 7 + bit))
+                self:setFrame(((bit >= 1) and (6 - bit) or 7) + self.width * 8)
             end
             y = bit32.rshift(y, 1)
         end
@@ -455,15 +514,24 @@ function Qr:genframe()
     end
 end
 
-function Qr:draw(x, y, pxlSize, bgFlags, fgFlags)
-    if lcd == nil then return end
+function Qr:draw(x, y, pxlSize, bgFlags, fgFlags, resumeIdx)
+    if lcd == nil then return nil end
     pxlSize = pxlSize or 2
-	lcd.drawFilledRectangle(x, y, (self.width + 2) * pxlSize, (self.width + 2) * pxlSize, bgFlags or ERASE)
-	for idx, value in pairs(self.frame) do
-		if (value == true) then
-			lcd.drawFilledRectangle(x + idx % self.width * pxlSize + pxlSize, y + math.floor(idx / self.width) * pxlSize + pxlSize, pxlSize, pxlSize, fgFlags or CUSTOM_COLOR)
-		end
-	end
+    resumeIdx = resumeIdx or 0
+    if resumeIdx == 0 then
+        lcd.drawFilledRectangle(x, y, (self.width + 2) * pxlSize, (self.width + 2) * pxlSize, bgFlags or ERASE)
+    end
+    for idx = resumeIdx, self.width * self.width - 1 do
+        if getUsage() > 60 then
+            return idx -- return current index to resume later
+        end
+        if self:getFrame(idx) then
+            local px = idx % self.width
+            local py = math.floor(idx / self.width)
+            lcd.drawFilledRectangle(x + px * pxlSize + pxlSize, y + py * pxlSize + pxlSize, pxlSize, pxlSize, fgFlags or CUSTOM_COLOR)
+        end
+    end
+    return nil -- completed
 end
 
 local loopc = 0
@@ -472,7 +540,8 @@ local ctx = {
     lastValid = 0,
     lastValidPos = "no gps",
     pxlSize = 2,
-    qr = nil
+    qr = nil,
+    drawIdx = nil,
 }
 local prefixes = { "", "geo:", "comgooglemaps://?q=", "cm://map?ll=", "GURU://" }
 local prefixIndex = 1
@@ -556,8 +625,8 @@ local function run(event)
         elseif ctx.qr.isvalid and doRedraw then -- Show generated QR
             doRedraw = false
             local qrXoffset = math.floor((LCD_W - ctx.pxlSize * (ctx.qr.width + 2)) / 2)
-            ctx.qr:draw(qrXoffset, 0, ctx.pxlSize)
-        elseif doRedraw then -- Show waiting/instruction screen
+            ctx.drawIdx = ctx.qr:draw(qrXoffset, 0, ctx.pxlSize, nil, nil, ctx.drawIdx)
+        elseif doRedraw and not continuous then -- Show waiting/instruction screen
             local centerX = LCD_W / 2
             if continuous then
                 lcd.drawText(centerX, LCD_H / 2, "<auto in " .. (nextrender/10) .. ">", SMLSIZE + CENTER)
@@ -595,19 +664,15 @@ local function run(event)
         if ctx.qr.progress == nil then
             ctx.qr:start(arg[1] or "hello world")
         end
-        function printFrame(buffer, width, back, fill)
-            back = back or "  "
-            fill = fill or "##"
-            for i = -2, width + 1 do
-                local line = ""
-                for j = 0, width - 1 do
-                    if i < 0 or i >= width then
-                        line = line .. back
-                    else
-                        line = line .. ((buffer[j * width + i] == true) and fill or back)
-                    end
-                end
-                print(back .. back .. back .. line .. back .. back .. back)
+        function printFrame(qr, back, fill)
+            back, fill = back or "  ", fill or "##"
+            local pad = back:rep(3)
+            for i = -2, qr.width + 1 do
+            local line = {}
+            for j = 0, qr.width - 1 do
+                line[#line + 1] = (i < 0 or i >= qr.width) and back or (qr:getFrame(j + i * qr.width) and fill or back)
+            end
+            print(pad .. table.concat(line) .. pad)
             end
         end
     end
@@ -621,7 +686,7 @@ local function run(event)
             if lcd ~= nil then
                 ctx.pxlSize = math.min(math.floor(math.min(LCD_H, LCD_H) / (ctx.qr.width + 2)))
             else
-                printFrame(ctx.qr.frame, ctx.qr.width)
+                printFrame(ctx.qr)
                 print("finished with usage:", getUsage(), "loops:", loopc)
                 return 1
             end
