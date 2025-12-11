@@ -543,7 +543,8 @@ local ctx = {
     qr = nil,
     drawIdx = nil,
 }
-local prefixes = { "", "geo:", "comgooglemaps://?q=", "cm://map?ll=", "GURU://" }
+local linkLabels   = { "plain", "native", "google",              "CoMaps",       "Guru" }
+local linkPrefixes = { "",      "geo:",   "comgooglemaps://?q=", "cm://map?ll=", "GURU://" }
 local prefixIndex = 1
 local doRedraw = true
 local continuous = false
@@ -605,7 +606,7 @@ local function run(event)
             doRedraw = true
         elseif event == EVT_EXIT_BREAK then
             doRedraw = true
-        elseif event == EVT_VIRTUAL_INC and (prefixIndex < #prefixes) then
+        elseif event == EVT_VIRTUAL_INC and (prefixIndex < #linkPrefixes) then
             prefixIndex = prefixIndex + 1
             ctx.qr:reset()
             doRedraw = true
@@ -623,9 +624,9 @@ local function run(event)
         if location ~= nil then --only update if we have a *valid* location (keeps last known)
             ctx.lastValidPos = location
         end
-        local newStr = prefixes[prefixIndex] .. (location or ctx.lastValidPos)
+        local newQrStr = linkPrefixes[prefixIndex] .. (location or ctx.lastValidPos)
         local nextrender = continuousFrameInterval - (loopc - ctx.loopStart)
-        local qrUpToDate = ctx.qr.isvalid and (newStr == ctx.qr.inputstr)
+        local qrUpToDate = ctx.qr.isvalid and (newQrStr == ctx.qr.inputstr)
         if qrUpToDate then
             lastValid = loopc
         elseif ctx.qr.isvalid then --display time since last valid QR in top
@@ -637,11 +638,11 @@ local function run(event)
         end
 
         -- draw bottom of screen
-        local displayStr = truncateStr(((location == nil) and "[X]" or "") .. newStr, math.floor(LCD_W / 5))
+        local displayStr = ((location == nil) and "[X]" or "") .. linkLabels[prefixIndex] .. " " .. (location or ctx.lastValidPos)
         lcd.drawFilledRectangle(0, LCD_H - 8, LCD_W, 8, ERASE) --clear bottom line
-        lcd.drawText(LCD_W / 2, LCD_H - 8, displayStr, SMLSIZE + CENTER)
+        lcd.drawText(LCD_W / 2, LCD_H - 8, truncateStr(displayStr, math.floor(LCD_W / 5)), SMLSIZE + CENTER)
         if doNewQr then
-            ctx.qr:start(newStr)
+            ctx.qr:start(newQrStr)
             ctx.loopStart, lastValid = loopc, loopc
         end
 
