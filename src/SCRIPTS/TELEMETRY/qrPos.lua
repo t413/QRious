@@ -547,7 +547,7 @@ local prefixes = { "", "geo:", "comgooglemaps://?q=", "cm://map?ll=", "GURU://" 
 local prefixIndex = 1
 local doRedraw = true
 local continuous = false
-local continuousFrameInterval = 50 --in loopc (10 loopc = 1 second)
+local continuousFrameInterval = 100 --in loopc (10 loopc = 1 second)
 local gpsfield = nil
 local lastBGloopc = 0
 
@@ -595,13 +595,32 @@ end
 local function run(event)
     loopc = loopc + 1
     if lcd ~= nil then
-        if doRedraw or ctx.qr:isRunning() then
-            lcd.clear()
-        else
-            lcd.drawFilledRectangle(0, LCD_H - 8, LCD_W, 8, ERASE)
+        local doNewQr = false
+        -- handle events --
+        if event == EVT_ENTER_BREAK then
+            doNewQr = true
+        elseif event == EVT_VIRTUAL_MENU or event == EVT_ENTER_LONG then
+            continuous = not continuous
+            ctx.qr:reset()
+            doRedraw = true
+        elseif event == EVT_EXIT_BREAK then
+            doRedraw = true
+        elseif event == EVT_VIRTUAL_INC and (prefixIndex < #prefixes) then
+            prefixIndex = prefixIndex + 1
+            ctx.qr:reset()
+            doRedraw = true
+        elseif event == EVT_VIRTUAL_DEC and (prefixIndex > 1) then
+            prefixIndex = prefixIndex - 1
+            ctx.qr:reset()
+            doRedraw = true
+        end
+
+        -- draw screen --
+        if (doRedraw and ctx.drawIdx == nil) or ctx.qr:isRunning() then
+            lcd.clear() --redraw mean clear and redraw everything
         end
         local location = getGps()
-        if location ~= nil then
+        if location ~= nil then --only update if we have a *valid* location (keeps last known)
             ctx.lastValidPos = location
         end
         local newStr = prefixes[prefixIndex] .. (location or ctx.lastValidPos)
@@ -614,49 +633,31 @@ local function run(event)
             lcd.drawText(0, 0, dt, SMLSIZE)
         end
         if continuous and (not qrUpToDate) and (not ctx.qr:isRunning()) and (nextrender <= 1) then
-            event = EVT_ENTER_BREAK --simulate enter press to redraw qr
+            doNewQr = true --time for new qr in continuous mode
         end
-        -- Always show current string at bottom
-        local displayStr = truncateStr(((location == nil) and "[X]" or "") .. newStr, math.floor(LCD_W / 5))
-        lcd.drawText(LCD_W / 2, LCD_H - 8, displayStr, SMLSIZE + CENTER)
 
-        if ctx.qr:isRunning() and not continuous then -- Show progress bar
-            lcd.drawGauge(LCD_W/4, LCD_H - 14, LCD_W/2, 5, ctx.qr.progress, 10) --x,y,width,height, value, maxvalue
-        elseif ctx.qr.isvalid and doRedraw then -- Show generated QR
-            doRedraw = false
+        -- draw bottom of screen
+        local displayStr = truncateStr(((location == nil) and "[X]" or "") .. newStr, math.floor(LCD_W / 5))
+        lcd.drawFilledRectangle(0, LCD_H - 8, LCD_W, 8, ERASE) --clear bottom line
+        lcd.drawText(LCD_W / 2, LCD_H - 8, displayStr, SMLSIZE + CENTER)
+        if doNewQr then
+            ctx.qr:start(newStr)
+            ctx.loopStart, lastValid = loopc, loopc
+        end
+
+        -- draw middle of screen
+        if ctx.qr:isRunning() then -- Show progress bar
+            lcd.drawGauge(LCD_W/3, LCD_H / 2 - 3, LCD_W/3, 5, ctx.qr.progress, 10  ) --x,y,width,height, value, maxvalue
+        elseif ctx.qr.isvalid and (doRedraw or ctx.drawIdx ~= nil) then -- Show generated QR
             local qrXoffset = math.floor((LCD_W - ctx.pxlSize * (ctx.qr.width + 2)) / 2)
             ctx.drawIdx = ctx.qr:draw(qrXoffset, 0, ctx.pxlSize, nil, nil, ctx.drawIdx)
         elseif doRedraw and not continuous then -- Show waiting/instruction screen
             local centerX = LCD_W / 2
-            if continuous then
-                lcd.drawText(centerX, LCD_H / 2, "<auto in " .. (nextrender/10) .. ">", SMLSIZE + CENTER)
-            else
-                lcd.drawText(centerX, 8, "QR Gen", MIDSIZE + CENTER)
-                lcd.drawText(centerX, 22, "[enter] = once [menu]=auto", SMLSIZE + CENTER)
-                lcd.drawText(centerX, 32, "<+/-> Change link type", SMLSIZE + CENTER)
-            end
+            lcd.drawText(centerX, 8, "QR Gen", MIDSIZE + CENTER)
+            lcd.drawText(centerX, 22, "[enter] = once [menu]=auto", SMLSIZE + CENTER)
+            lcd.drawText(centerX, 32, "<+/-> Change link type", SMLSIZE + CENTER)
         end
-
-        --handle events
-        if event == EVT_ENTER_BREAK then
-            ctx.qr:start(newStr)
-            ctx.loopStart, lastValid = loopc, loopc
-        elseif event == EVT_VIRTUAL_MENU or event == EVT_ENTER_LONG then
-            continuous = not continuous
-            ctx.qr:reset()
-            doRedraw = true
-            print("continuous mode " .. (continuous and "on" or "off"))
-        elseif event == EVT_EXIT_BREAK then
-            doRedraw = true
-        elseif event == EVT_VIRTUAL_INC then
-            prefixIndex = math.min(prefixIndex + 1, #prefixes)
-            ctx.qr:reset()
-            doRedraw = true
-        elseif event == EVT_VIRTUAL_DEC then
-            prefixIndex = math.max(prefixIndex - 1, 1)
-            ctx.qr:reset()
-            doRedraw = true
-        end
+        doRedraw = false --clear redraw flag
     end
 
     if lcd == nil then --desktop mode!
