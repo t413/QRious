@@ -222,20 +222,9 @@ function Qr:genframe()
 
     if self.progress == 4 then --add timing patterns and reserve format area
         if self.resume == nil then
-            self.resume = {step = 1, y = 0, x = 0}
-        end
-        local tmp = self.resume
-
-        -- Step 1: Set dark module
-        if tmp.step == 1 then
             self:setFrame(8 + self.width * (self.width - 8))
-            tmp.step = 2
-        end
-
-        -- Step 2: Timing gap and reserve format area - mask only
-        if tmp.step == 2 then
+            -- timing gap and reserve format area - mask only
             for i = 0, 8 do
-                if getUsage() > 60 then return end
                 if i < 7 then
                     self:setmask(7, i)
                     self:setmask(self.width - 8, i)
@@ -251,42 +240,25 @@ function Qr:genframe()
                 self:setmask(i, 8)
                 if i < 7 then self:setmask(8, i + self.width - 7) end
             end
-            tmp.step = 3
-            tmp.x = 0
-        end
-
-        -- Step 3: Timing row/col
-        if tmp.step == 3 then
-            for x = tmp.x, self.width - 15, 2 do
-                tmp.x = x
-                if getUsage() > 60 then return end
+            -- timing row/col
+            for x = 0, self.width - 15, 2 do
                 self:setmask(9 + x, 6)
                 self:setmask(6, 9 + x)
-                self:setFrame((8 + x) + self.width * 6)
+                self:setFrame(8 + x + self.width * 6)
                 self:setFrame(6 + self.width * (8 + x))
             end
-            tmp.step = 4
-            tmp.y = 0
-            tmp.x = 0
+            self.resume = {y = 0}
         end
-
-        -- Step 4: Sync mask bits (EXPENSIVE - nested loop)
-        if tmp.step == 4 then
-            for y = tmp.y, self.width - 1 do
-                tmp.y = y
-                if getUsage() > 60 then return end
-                for x = tmp.x, y do
-                    tmp.x = x
-                    if getUsage() > 70 then return end -- Check inside inner loop too
-                    local idx = x + self.width * y
-                    if self:getFrame(idx) then
-                        self:setmask(x, y)
-                    end
+        -- sync mask bits
+        for y = self.resume.y, self.width - 1 do
+            self.resume.y = y
+            if getUsage() > 50 then return end
+            for x = 0, y do
+                if self:getFrame(x + self.width * y) == true then
+                    self:setmask(x, y)
                 end
-                tmp.x = 0 -- Reset x for next y iteration
             end
         end
-
         self.resume = nil
         self.progress = 5
         if getUsage() > 50 then return end
@@ -328,32 +300,29 @@ function Qr:genframe()
     end
 
     if self.progress == 6 then --generate ECC
-        self.genpoly = {}
         if self.resume == nil then
+            self.genpoly = {}
             self.genpoly[0] = 1
-            self.resume = {i=0, j=0}
+            self.resume = {i=0}
         end
-        local tmp = self.resume
-        for i = tmp.i, self.eccblkwid - 1 do
-            tmp.i = i
+        for i = self.resume.i, self.eccblkwid - 1 do
+            self.resume.i = i
             if getUsage() > 40 then return end
             self.genpoly[i + 1] = 1
             for j = i, 1, -1 do
-                if (self.genpoly[j] or 0) >= 1 then
+                if (self.genpoly[j]) >= 1 then
                     local glog_val = string.byte(GLOG_LOOKUP, 1 + self.genpoly[j])
                     local gexp_val = string.byte(GEXP_LOOKUP, 1 + self:modnn(glog_val + i))
-                    self.genpoly[j] = bit32.bxor(self.genpoly[j - 1] or 0, gexp_val)
+                    self.genpoly[j] = bit32.bxor(self.genpoly[j - 1], gexp_val)
                 else
-                    self.genpoly[j] = self.genpoly[j - 1] or 0
+                    self.genpoly[j] = self.genpoly[j - 1]
                 end
             end
-            local glog_val = string.byte(GLOG_LOOKUP, math.max(1, 1 + (self.genpoly[0] or 0)))
+            local glog_val = string.byte(GLOG_LOOKUP, math.max(1, 1 + (self.genpoly[0])))
             self.genpoly[0] = string.byte(GEXP_LOOKUP, math.max(1, 1 + self:modnn(glog_val + i)))
         end
-        for j = tmp.j, self.eccblkwid do
-            tmp.j = j
-            if getUsage() > 40 then return end
-            self.genpoly[j] = string.byte(GLOG_LOOKUP, math.max(1, 1 + (self.genpoly[j] or 0)))
+        for j = 0, self.eccblkwid do
+            self.genpoly[j] = string.byte(GLOG_LOOKUP, math.max(1, 1 + (self.genpoly[j])))
         end
         self.resume = nil
         self.progress = 7
