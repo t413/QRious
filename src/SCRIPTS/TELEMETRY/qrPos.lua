@@ -536,19 +536,18 @@ end
 
 local loopc = 0
 local ctx = {
-    loopStart = 0, loopEnd = 0,
-    lastValid = 0,
-    lastValidPos = "no gps",
-    pxlSize = 2,
+    loopStart = 0,
+    lastValidGps = nil,
     qr = nil,
     drawIdx = nil,
+    activeGps = nil,
 }
 local linkLabels   = { "plain", "native", "google",              "CoMaps",       "Guru" }
 local linkPrefixes = { "",      "geo:",   "comgooglemaps://?q=", "cm://map?ll=", "GURU://" }
 local prefixIndex = 1
 local doRedraw = true
 local continuous = false
-local continuousFrameInterval = 100 --in loopc (10 loopc = 1 second)
+local continuousFrameInterval = 10*20 --in loopc (20 loopc = 1 second)
 local gpsfield = nil
 local lastBGloopc = 0
 
@@ -559,13 +558,11 @@ local function getGps()
     if gpsfield ~= nil then
         local gps = getValue(gpsfield.id)
         if type(gps) == "table" and gps.lat ~= nil and gps.lon ~= nil then
-            return string.format("%.6f,%.6f", gps.lat, gps.lon)
+            return { lat = gps.lat, lon = gps.lon, valid = true, time = loopc }
         else
-            return nil
+            return { lat = 0, lon = 0, valid = false }
         end
-    else
-        return "no gps sensor"
-    end
+    else return nil end --telem not setup
 end
 
 function truncateStr(str, maxLen)
@@ -581,14 +578,14 @@ local function init()
     Qr = nil --delete prototype
 end
 
-local function background()
+local function background() --called when script isn't being shown
     if lastBGloopc == loopc and not doRedraw then
         doRedraw = true
         ctx.qr:reset()
     end
     local location = getGps()
-    if location ~= nil then
-        ctx.lastValidPos = location
+    if location ~= nil and location.valid then --only update when valid data retrieved
+        ctx.lastValidGps = location --allows model to crash and preserve last known good
     end
     lastBGloopc = loopc
 end
@@ -597,6 +594,9 @@ local function run(event)
     loopc = loopc + 1
     if lcd ~= nil then
         local doNewQr = false
+        local qrArea = math.floor(LCD_W / 2)  -- Left half for QR
+        local statusX = qrArea + 1  -- Status area starts after QR
+
         -- handle events --
         if event == EVT_ENTER_BREAK then
             doNewQr = true
@@ -616,49 +616,63 @@ local function run(event)
             doRedraw = true
         end
 
-        -- draw screen --
-        if (doRedraw and ctx.drawIdx == nil) or ctx.qr:isRunning() then
-            lcd.clear() --redraw mean clear and redraw everything
+        -- update data values --
+        local gpsData = getGps()
+        if gpsData ~= nil and gpsData.valid then
+            ctx.lastValidGps = gpsData --allows model to crash and preserve last known good
         end
-        local location = getGps()
-        if location ~= nil then --only update if we have a *valid* location (keeps last known)
-            ctx.lastValidPos = location
-        end
-        local newQrStr = linkPrefixes[prefixIndex] .. (location or ctx.lastValidPos)
+        local newQrStr = linkPrefixes[prefixIndex] .. (ctx.lastValidGps and string.format("%.6f,%.6f", ctx.lastValidGps.lat, ctx.lastValidGps.lon) or "no gps")
         local nextrender = continuousFrameInterval - (loopc - ctx.loopStart)
-        local qrUpToDate = ctx.qr.isvalid and (newQrStr == ctx.qr.inputstr)
-        if qrUpToDate then
-            lastValid = loopc
-        elseif ctx.qr.isvalid then --display time since last valid QR in top
-            local dt = string.format("*%d", (loopc - lastValid) / 10) --in seconds
-            lcd.drawText(0, 0, dt, SMLSIZE)
+        if continuous and (not ctx.qr.isvalid or (newQrStr ~= ctx.qr.inputstr)) and (not ctx.qr:isRunning()) and (nextrender <= 1) then
+            doNewQr = true --start auto update
         end
-        if continuous and (not qrUpToDate) and (not ctx.qr:isRunning()) and (nextrender <= 1) then
-            doNewQr = true --time for new qr in continuous mode
-        end
-
-        -- draw bottom of screen
-        local displayStr = ((location == nil) and "[X]" or "") .. linkLabels[prefixIndex] .. " " .. (location or ctx.lastValidPos)
-        lcd.drawFilledRectangle(0, LCD_H - 8, LCD_W, 8, ERASE) --clear bottom line
-        lcd.drawText(LCD_W / 2, LCD_H - 8, truncateStr(displayStr, math.floor(LCD_W / 5)), SMLSIZE + CENTER)
         if doNewQr then
             ctx.qr:start(newQrStr)
-            ctx.loopStart, lastValid = loopc, loopc
+            ctx.loopStart, ctx.activeGps = loopc, ctx.lastValidGps --capture time of request and point used (includes time)
         end
 
-        -- draw middle of screen
-        if ctx.qr:isRunning() then -- Show progress bar
-            lcd.drawGauge(LCD_W/3, LCD_H / 2 - 3, LCD_W/3, 5, ctx.qr.progress, 10  ) --x,y,width,height, value, maxvalue
-        elseif ctx.qr.isvalid and (doRedraw or ctx.drawIdx ~= nil) then -- Show generated QR
-            local qrXoffset = math.floor((LCD_W - ctx.pxlSize * (ctx.qr.width + 2)) / 2)
-            ctx.drawIdx = ctx.qr:draw(qrXoffset, 0, ctx.pxlSize, nil, nil, ctx.drawIdx)
-        elseif doRedraw and not continuous then -- Show waiting/instruction screen
-            local centerX = LCD_W / 2
-            lcd.drawText(centerX, 8, "QR Gen", MIDSIZE + CENTER)
-            lcd.drawText(centerX, 22, "[enter] = once [menu]=auto", SMLSIZE + CENTER)
-            lcd.drawText(centerX, 32, "<+/-> Change link type", SMLSIZE + CENTER)
+        -- draw screen --
+        if (doRedraw and ctx.drawIdx == nil) or ctx.qr:isRunning() then
+            lcd.clear()
         end
-        doRedraw = false --clear redraw flag
+
+        -- Draw QR area (left half)
+        if ctx.qr:isRunning() then
+            lcd.drawText(qrArea / 2, LCD_H / 2 - 10, "Generating", SMLSIZE + CENTER)
+            lcd.drawGauge(10, LCD_H / 2, qrArea - 20, 5, ctx.qr.progress, 10)
+        elseif ctx.qr.isvalid and (doRedraw or ctx.drawIdx ~= nil) then
+            local pxlSize = math.min(math.floor(qrArea / (ctx.qr.width + 2)), math.floor(LCD_H / (ctx.qr.width + 2)))
+            local qrXoffset = math.floor((qrArea - pxlSize * (ctx.qr.width + 2)) / 2)
+            local qrYoffset = math.floor((LCD_H - pxlSize * (ctx.qr.width + 2)) / 2)
+            ctx.drawIdx = ctx.qr:draw(qrXoffset, qrYoffset, pxlSize, nil, nil, ctx.drawIdx)
+        elseif doRedraw and not continuous then
+            lcd.drawText(qrArea / 2, LCD_H / 2 - 10, "Press ENTER", SMLSIZE + CENTER)
+            lcd.drawText(qrArea / 2, LCD_H / 2, "to generate", SMLSIZE + CENTER)
+        end
+
+        -- Draw status area (right half)
+        local lineY, lineH = 22, 8 --starting y and line height
+        if not ctx.lastValidGps then
+            lcd.drawText(statusX, lineY, "NOT SET UP", SMLSIZE)
+        elseif not ctx.lastValidGps.valid then
+            lcd.drawText(statusX, lineY, "NO FIX", SMLSIZE)
+        else --valid gps
+            lineY = 2 --reset to top
+            lcd.drawText(statusX, lineY, string.format("%.6f", ctx.lastValidGps.lat), SMLSIZE)
+            lineY = lineY + lineH
+            lcd.drawText(statusX, lineY, string.format("%.6f", ctx.lastValidGps.lon), SMLSIZE)
+        end
+        lineY = lineY + lineH + 2
+        lcd.drawText(statusX, lineY, linkLabels[prefixIndex] .. " link", SMLSIZE) -- Link Type
+        lineY = lineY + lineH
+        if ctx.activeGps or ctx.lastValidGps then
+            local dt = (loopc - (ctx.activeGps or ctx.lastValidGps).time) / 20
+            lcd.drawText(statusX, lineY, string.format("%ds old", dt), SMLSIZE)
+            lineY = lineY + lineH
+        end
+        lcd.drawText(statusX, LCD_H - lineH, (continuous and "Auto" or "Manual") .. " mode", SMLSIZE) -- Mode, bottom aligned
+
+        doRedraw = false
     end
 
     if lcd == nil then --desktop mode!
@@ -682,11 +696,9 @@ local function run(event)
     -- processing loop --
     if ctx.qr:isRunning() then
         doRedraw = not continuous
-        if ctx.qr:genframe() then
-            ctx.loopEnd = loopc
+        if ctx.qr:genframe() then -- completed!
             doRedraw = true
             if lcd ~= nil then
-                ctx.pxlSize = math.min(math.floor(math.min(LCD_H, LCD_H) / (ctx.qr.width + 2)))
             else
                 printFrame(ctx.qr)
                 print("finished with usage:", getUsage(), "loops:", loopc)
