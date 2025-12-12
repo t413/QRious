@@ -599,14 +599,14 @@ local function getGps()
     if gpsfield == nil then
         gpsfield = getFieldInfo("GPS")
     end
-    if gpsfield ~= nil then
-        local gps = getValue(gpsfield.id)
-        if type(gps) == "table" and gps.lat ~= nil and gps.lon ~= nil then
-            return { lat = gps.lat, lon = gps.lon, valid = true, time = loopc }
-        else
-            return { lat = 0, lon = 0, valid = false }
-        end
-    else return nil end --telem not setup
+    local gps = gpsfield and getValue(gpsfield.id) or nil
+    if type(gps) == "table" and gps.lat ~= nil and gps.lon ~= nil then
+        return { lat = gps.lat, lon = gps.lon, valid = true, time = getTime() }
+    elseif gpsfield == nil then
+        return nil --gps sensor not set up
+    else
+        return { lat = 0, lon = 0, valid = false }
+    end
 end
 
 function truncateStr(str, maxLen)
@@ -683,7 +683,7 @@ local function run(event)
         -- Draw QR area (left half)
         if ctx.qr:isRunning() then
             lcd.drawText(qrArea / 2, LCD_H / 2 - 10, "Generating", SMLSIZE + CENTER)
-            lcd.drawGauge(10, LCD_H / 2, qrArea - 20, 5, ctx.qr.progress, 10)
+            lcd.drawGauge(10, LCD_H / 2, qrArea - 20, 5, ctx.qr.progress, 11)
         elseif ctx.qr.isvalid and (doRedraw or ctx.drawIdx ~= nil) then
             local pxlSize = math.min(math.floor(qrArea / (ctx.qr.width + 2)), math.floor(LCD_H / (ctx.qr.width + 2)))
             local qrXoffset = math.floor((qrArea - pxlSize * (ctx.qr.width + 2)) / 2)
@@ -710,7 +710,7 @@ local function run(event)
         lcd.drawText(statusX, lineY, linkLabels[prefixIndex] .. " link", SMLSIZE) -- Link Type
         lineY = lineY + lineH
         if ctx.activeGps or ctx.lastValidGps then
-            local dt = (loopc - (ctx.activeGps or ctx.lastValidGps).time) / COUNT_PER_SEC
+            local dt = (getTime() - (ctx.activeGps or ctx.lastValidGps).time) / 100
             lcd.drawText(statusX, lineY, string.format("%ds old", dt), SMLSIZE)
             lineY = lineY + lineH
         end

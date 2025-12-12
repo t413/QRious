@@ -83,9 +83,9 @@ local function refresh(vars)
         or prefix .. "no gps"
     -- Check if we need to generate a new QR code
     local agesrc = vars.activeGps or vars.lastValidGps
-    local age = agesrc and ((vars.loopc - agesrc.time) / COUNT_PER_SEC) or 0
+    local age = agesrc and ((getTime() - agesrc.time) / 100) or 0
     local interval = (vars.options.interval or 10)
-    if newStr ~= qr.inputstr and not qr:isRunning() and age > interval then
+    if newStr ~= qr.inputstr and not qr:isRunning() and (age > interval or qr.inputstr == "") then
         qr:start(newStr)
         vars.startQRc, vars.activeGps = vars.loopc, vars.lastValidGps
         qr.bmpPath = "/SCRIPTS/TELEMETRY/qr_temp.bmp" --enable bmp output
