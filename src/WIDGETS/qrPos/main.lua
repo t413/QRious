@@ -1,16 +1,17 @@
 local TELE_PATH = "/SCRIPTS/TELEMETRY"
 local qr = nil
 local getGps = nil
+local bmpObj = nil
 local COUNT_PER_SEC = 20 --opentx seems to run at 20hz
 
 local myoptions = {
-    { "COLOR", COLOR, BLACK },
+    { "COLOR", COLOR, BLUE },
     { "linknone",   BOOL, 0 },
     { "linkgeo",    BOOL, 1 },
     { "linkgoogle", BOOL, 0 },
     { "linkcomaps", BOOL, 0 },
     { "linkguru",   BOOL, 0 },
-    { "interval", VALUE, 10, 60, 1 }, --default, max, min (seconds)
+    { "interval", VALUE, 10, 60, 2 }, --default, max, min (seconds)
 }
 
 local prefixes = {
@@ -37,6 +38,14 @@ local function create(zone, options)
         lastValidGps = nil,
         activeGps = nil,
     }
+end
+
+function drawBMP(qr, x, y, scale)
+    if bmpObj == nil and qr.bmpPath == nil then return end
+    if bmpObj == nil then
+        bmpObj = Bitmap.open(qr.bmpPath)
+    end
+    lcd.drawBitmap(bmpObj, x, y, scale)
 end
 
 local function update(vars, newOptions)
@@ -95,29 +104,32 @@ local function refresh(vars)
         if qr:genframe() then -- Generation complete
             -- Calculate pixel size to fit in zone with padding
             vars.pxlSize = math.floor(math.min(vars.zone.w, vars.zone.h - 20) / (qr.width + 2))
+            bmpObj = nil --force reload bmp
         end
     end
     -- Set custom color if specified
     if vars.options.COLOR ~= nil then
         lcd.setColor(CUSTOM_COLOR, vars.options.COLOR)
     end
-    print("QR refresh", vars.loopc, newStr, qr:isRunning() and "running" or "idle", qr.isvalid and "valid" or "invalid", age, interval)
     -- Draw QR code or status
-    if qr:isRunning() then
-        -- Show generation progress
-        lcd.drawText(vars.zone.x + vars.zone.w/2, vars.zone.y + vars.zone.h/2 - 20, "Generating...", CENTER + SMLSIZE + CUSTOM_COLOR)
-        local progress = qr.progress or 0
-        local barW = math.min(vars.zone.w - 20, 100)
-        local barX = vars.zone.x + (vars.zone.w - barW) / 2
-        lcd.drawRectangle(barX, vars.zone.y + vars.zone.h/2, barW, 6)
-        lcd.drawFilledRectangle(barX + 1, vars.zone.y + vars.zone.h/2 + 1, (barW - 2) * progress / 10, 4, CUSTOM_COLOR)
-    elseif qr.isvalid then
-        -- Draw QR code
+    if qr.isvalid or (bmpObj and qr.width) then -- Draw QR code, even the old one
         local qrArea = math.min(vars.zone.w, vars.zone.h - 20)
         local scale = math.floor(qrArea / qr.width * 100)
         local offsetX = vars.zone.x + (vars.zone.w - qr.width * scale / 100) / 2
         local offsetY = vars.zone.y + (vars.zone.h - 20 - qr.width * scale / 100) / 2
-        qr:drawBMP(offsetX, offsetY, scale)
+        drawBMP(qr, offsetX, offsetY, scale)
+    end
+    if qr:isRunning() then
+        -- Show generation progress
+        local boxW, boxH = 100, 35
+        local boxX = vars.zone.x + (vars.zone.w - boxW) / 2
+        local boxY = vars.zone.y + (vars.zone.h - boxH) / 2
+        lcd.drawFilledRectangle(boxX, boxY, boxW, boxH, WHITE)
+        lcd.drawRectangle(boxX, boxY, boxW, boxH, CUSTOM_COLOR, 2)
+        lcd.drawText(vars.zone.x + vars.zone.w/2, boxY + 5, "Generating...", CENTER + SMLSIZE + CUSTOM_COLOR)
+        local barW, barX, barY = boxW - 16, boxX + 8, boxY + 22
+        lcd.drawRectangle(barX, barY, barW, 6)
+        lcd.drawFilledRectangle(barX + 1, barY + 1, (barW - 2) * (qr.progress or 0) / 11, 4, CUSTOM_COLOR)
     elseif vars.lastValidGps == nil or not vars.lastValidGps.valid then
         -- No valid QR code yet
         lcd.drawText(vars.zone.x + vars.zone.w/2, vars.zone.y + vars.zone.h/2 - 10, "Waiting for GPS", CENTER + SMLSIZE + CUSTOM_COLOR)
@@ -131,7 +143,7 @@ local function refresh(vars)
         lcd.drawText(vars.zone.x + vars.zone.w/2, textY, msg, CENTER + SMLSIZE + CUSTOM_COLOR)
     else
         -- Show age of data
-        local ageText = string.format("%.0fs old", age)
+        local ageText = string.format("%.5f,%.5f [%.0fs old]", vars.lastValidGps.lat, vars.lastValidGps.lon, age)
         lcd.drawText(vars.zone.x + vars.zone.w/2, textY, ageText, CENTER + SMLSIZE + CUSTOM_COLOR)
     end
     vars.loopc = vars.loopc + 1

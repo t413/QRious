@@ -500,7 +500,6 @@ function Qr:genframe()
             end
         end
         self:reset(true) --partial reset, don't reset frame & width
-        self.bmpObj = nil --force reload bmp if drawn
         self.isvalid = true
         collectgarbage()
         return self.isvalid
@@ -549,14 +548,6 @@ function Qr:toBMP(filepath, resumeIdx)
     end
     io.close(f)
     return nil
-end
-
-function Qr:drawBMP(x, y, scale)
-    if not self.isvalid or not self.bmpPath then return end
-    if self.bmpObj == nil then
-        self.bmpObj = Bitmap.open(self.bmpPath)
-    end
-    lcd.drawBitmap(self.bmpObj, x, y, scale or 100)
 end
 
 function Qr:draw(x, y, pxlSize, bgFlags, fgFlags, resumeIdx)
