@@ -615,7 +615,6 @@ end
 local function background() --called when script isn't being shown
     if lastBGloopc == loopc and not doRedraw then
         doRedraw = true
-        ctx.qr:reset()
     end
     local location = getGps()
     if location ~= nil and location.valid then --only update when valid data retrieved
