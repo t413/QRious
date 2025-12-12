@@ -17,6 +17,8 @@ local function getFmtWord(index)
 end
 
 local MAX_QR_VERSION = 4  -- Version 4 = 33x33, sufficient for GPS with any prefix
+local MAX_LOAD = 40  -- Max CPU load percentage before yielding/differing
+local COUNT_PER_SEC = 20 --opentx seems to run at 20hz
 
 Qr = {
     eccbuf    = nil,
@@ -139,10 +141,10 @@ function Qr:genframe()
     end
 
     if self.progress == 1 then --determine version
-        if self.resume == nil then self.resume = {vsn = 0} end
-        for vsn = self.resume.vsn, MAX_QR_VERSION do
-            if getUsage() > 60 then
-                self.resume.vsn = vsn
+        if self.resume == nil then self.resume = 0 end
+        for vsn = self.resume, MAX_QR_VERSION do
+            if getUsage() > MAX_LOAD and vsn > self.resume then
+                self.resume = vsn
                 return
             end
             local k = (self.ecclevel - 1) * 4 + (vsn - 1) * 16
@@ -160,7 +162,7 @@ function Qr:genframe()
         self.width = 17 + 4 * self.version
         print(string.format("QR: finished calculating version [%d] width [%d] from data len [%d]", self.version, self.width, #self.inputstr))
         self.progress = 2
-        if getUsage() > 50 then return end
+        if getUsage() > MAX_LOAD then return end
     end
 
     if self.progress == 2 then --initialize frame and eccbuf
@@ -170,7 +172,7 @@ function Qr:genframe()
             self.eccbuf[t] = 0
         end
         self.progress = 3
-        if getUsage() > 50 then return end
+        if getUsage() > MAX_LOAD then return end
     end
 
     if self.progress == 3 then --insert finder patterns and alignment blocks
@@ -218,7 +220,7 @@ function Qr:genframe()
             end
         end
         self.progress = 4
-        if getUsage() > 50 then return end
+        if getUsage() > MAX_LOAD then return end
     end
 
     if self.progress == 4 then --add timing patterns and reserve format area
@@ -248,12 +250,14 @@ function Qr:genframe()
                 self:setFrame(8 + x + self.width * 6)
                 self:setFrame(6 + self.width * (8 + x))
             end
-            self.resume = {y = 0}
+            self.resume = 0
         end
         -- sync mask bits
-        for y = self.resume.y, self.width - 1 do
-            self.resume.y = y
-            if getUsage() > 50 then return end
+        for y = self.resume, self.width - 1 do
+            if getUsage() > MAX_LOAD and y > self.resume then
+                self.resume = y
+                return
+            end
             for x = 0, y do
                 if self:getFrame(x + self.width * y) == true then
                     self:setmask(x, y)
@@ -262,7 +266,7 @@ function Qr:genframe()
         end
         self.resume = nil
         self.progress = 5
-        if getUsage() > 50 then return end
+        if getUsage() > MAX_LOAD then return end
     end
 
     if self.progress == 5 then --encode data
@@ -297,18 +301,20 @@ function Qr:genframe()
         end
         self.progress = 6
         collectgarbage()
-        if getUsage() > 50 then return end
+        if getUsage() > MAX_LOAD then return end
     end
 
     if self.progress == 6 then --generate ECC
         if self.resume == nil then
             self.genpoly = {}
             self.genpoly[0] = 1
-            self.resume = {i=0}
+            self.resume = 0
         end
-        for i = self.resume.i, self.eccblkwid - 1 do
-            self.resume.i = i
-            if getUsage() > 40 then return end
+        for i = self.resume, self.eccblkwid - 1 do
+            if getUsage() > MAX_LOAD and i > self.resume then
+                self.resume = i
+                return
+            end
             self.genpoly[i + 1] = 1
             for j = i, 1, -1 do
                 if (self.genpoly[j]) >= 1 then
@@ -328,7 +334,7 @@ function Qr:genframe()
         self.resume = nil
         self.progress = 7
         collectgarbage()
-        if getUsage() > 50 then return end
+        if getUsage() > MAX_LOAD then return end
     end
 
     if self.progress == 7 then --append ecc to data buffer
@@ -346,7 +352,7 @@ function Qr:genframe()
                 end
                 for id = tmp.id, self.datablkw + blk - 1 do
                     tmp.id = id
-                    if getUsage() > 60 then return end
+                    if getUsage() > MAX_LOAD then return end
                     local xor_val = bit32.bxor(self.eccbuf[tmp.y + id], self.eccbuf[tmp.k])
                     local fb = xor_val < 255 and string.byte(GLOG_LOOKUP, xor_val + 1) or nil
                     if fb and fb ~= 255 then
@@ -372,7 +378,7 @@ function Qr:genframe()
         self.genpoly = nil  -- Clear generator polynomial, no longer needed
         self.progress = 8
         collectgarbage()
-        if getUsage() > 50 then return end
+        if getUsage() > MAX_LOAD then return end
     end
 
     if self.progress == 8 then --interleave data+ECC bytes blocks
@@ -400,7 +406,7 @@ function Qr:genframe()
         self.eccbuf = tempbuf
         self.progress = 9
         collectgarbage()
-        if getUsage() > 50 then return end
+        if getUsage() > MAX_LOAD then return end
     end
 
     if self.progress == 9 then --pack bits into frame avoiding masked area
@@ -411,7 +417,7 @@ function Qr:genframe()
         local m = (self.datablkw + self.eccblkwid) * (self.neccblk1 + self.neccblk2) + self.neccblk2
         for i = tmp.i, m - 1 do
             tmp.i = i
-            if getUsage() > 80 then return end
+            if getUsage() > MAX_LOAD then return end
             local t = self.eccbuf[i]
             for j = 0, 7 do
                 if bit32.band(0x80, t) >= 1 then
@@ -441,15 +447,17 @@ function Qr:genframe()
         self.resume = nil
         self.progress = 10
         collectgarbage()
-        if getUsage() > 50 then return end
+        if getUsage() > MAX_LOAD then return end
     end
 
     if self.progress == 10 then --apply mask pattern
         collectgarbage()
         if self.resume == nil then self.resume = 0 end
         for y = self.resume, self.width - 1 do
-            self.resume = y
-            if getUsage() > 60 then return end
+            if getUsage() > MAX_LOAD and y > self.resume then
+                self.resume = y
+                return
+            end
             for x = 0, self.width - 1 do
                 if bit32.band((x + y), 1) == 0 and not self:ismasked(x, y) then
                     local idx = x + y * self.width
@@ -479,7 +487,7 @@ function Qr:genframe()
         self:reset(true) --partial reset, don't reset frame & width
         self.progress = 11
         collectgarbage()
-        if getUsage() > 50 then return end
+        if getUsage() > MAX_LOAD then return end
     end
     if self.progress == 11 then --apply mask pattern
         if lcd == nil and self.bmpPath == nil then --desktop luac
@@ -524,7 +532,7 @@ function Qr:toBMP(filepath, resumeIdx)
 
     local padding = string.rep("\000", rowPadding)
     for y = resumeIdx, 0, -1 do
-        if getUsage() > 70 then return y end
+        if getUsage() > MAX_LOAD then return y end
         local rowData = ""  -- String instead of table
         for byteIdx = 0, rowBytes - 1 do
             local byte = 0
@@ -558,7 +566,7 @@ function Qr:draw(x, y, pxlSize, bgFlags, fgFlags, resumeIdx)
         lcd.drawFilledRectangle(x, y, (self.width + 2) * pxlSize, (self.width + 2) * pxlSize, bgFlags or ERASE)
     end
     for idx = resumeIdx, self.width * self.width - 1 do
-        if getUsage() > 60 then
+        if (idx % 20 == 0) and getUsage() > MAX_LOAD and (idx > resumeIdx) then
             return idx -- return current index to resume later
         end
         if self:getFrame(idx) then
@@ -702,7 +710,7 @@ local function run(event)
         lcd.drawText(statusX, lineY, linkLabels[prefixIndex] .. " link", SMLSIZE) -- Link Type
         lineY = lineY + lineH
         if ctx.activeGps or ctx.lastValidGps then
-            local dt = (loopc - (ctx.activeGps or ctx.lastValidGps).time) / 20
+            local dt = (loopc - (ctx.activeGps or ctx.lastValidGps).time) / COUNT_PER_SEC
             lcd.drawText(statusX, lineY, string.format("%ds old", dt), SMLSIZE)
             lineY = lineY + lineH
         end
