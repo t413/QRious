@@ -1,7 +1,6 @@
 local TELE_PATH = "/SCRIPTS/TELEMETRY"
 local qr = nil
 local getGps = nil
-local bmpObj = nil
 local COUNT_PER_SEC = 20 --opentx seems to run at 20hz
 
 local myoptions = {
@@ -37,15 +36,28 @@ local function create(zone, options)
         pxlSize = 1,
         lastValidGps = nil,
         activeGps = nil,
+        bmpObj, bmpPos = nil, nil
     }
 end
 
-function drawBMP(qr, x, y, scale)
-    if bmpObj == nil and qr.bmpPath == nil then return end
-    if bmpObj == nil then
-        bmpObj = Bitmap.open(qr.bmpPath)
+function getMyQr(vars)
+    return (qrMutex == nil or qrMutex == vars) and qr or nil
+end
+
+function drawBMP(qr, vars, btmPadding)
+    if vars.bmpObj == nil and qr.bmpPath == nil then return end
+    if vars.bmpObj == nil then
+        vars.bmpObj = Bitmap.open(qr.bmpPath)
+        btmPadding = btmPadding or 20
+        local qrArea = math.min(vars.zone.w, vars.zone.h - btmPadding)
+        local scale = math.floor(qrArea / qr.width * 98)
+        vars.bmpPos = {
+            offsetX = vars.zone.x + (vars.zone.w - qr.width * scale / 100) / 2,
+            offsetY = vars.zone.y + (vars.zone.h - btmPadding - qr.width * scale / 100) / 2,
+            scale = scale
+        }
     end
-    lcd.drawBitmap(bmpObj, x, y, scale)
+    lcd.drawBitmap(vars.bmpObj, vars.bmpPos.offsetX, vars.bmpPos.offsetY, vars.bmpPos.scale)
 end
 
 local function drawOverlayMsg(zone, text, barProgress, barMax)
@@ -122,12 +134,8 @@ local function refresh(vars)
         lcd.setColor(CUSTOM_COLOR, vars.options.COLOR)
     end
     -- Draw QR code or status
-    if qr.width > 0 and (qr.isvalid or bmpObj) then -- Draw QR code, even the old one
-        local qrArea = math.min(vars.zone.w, vars.zone.h - 20)
-        local scale = math.floor(qrArea / qr.width * 98)
-        local offsetX = vars.zone.x + (vars.zone.w - qr.width * scale / 100) / 2
-        local offsetY = vars.zone.y + (vars.zone.h - 20 - qr.width * scale / 100) / 2
-        drawBMP(qr, offsetX, offsetY, scale)
+    if vars.bmpPos or qr.isvalid then -- Draw QR code, even the old one
+        drawBMP(qr, vars)
     end
     -- now draw status overlays
     if qr:isRunning() then
