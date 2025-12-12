@@ -48,6 +48,21 @@ function drawBMP(qr, x, y, scale)
     lcd.drawBitmap(bmpObj, x, y, scale)
 end
 
+local function drawOverlayMsg(zone, text, barProgress, barMax)
+    local boxW, boxH = 100, barProgress and 35 or 25
+    local boxX = zone.x + (zone.w - boxW) / 2
+    local boxY = zone.y + (zone.h - boxH) / 2
+
+    lcd.drawFilledRectangle(boxX, boxY, boxW, boxH, WHITE)
+    lcd.drawRectangle(boxX, boxY, boxW, boxH, CUSTOM_COLOR, 2)
+    lcd.drawText(zone.x + zone.w/2, boxY + 5, text, CENTER + SMLSIZE + CUSTOM_COLOR)
+
+    if barProgress and barMax then
+        local barW, barX, barY = boxW - 16, boxX + 8, boxY + 22
+        lcd.drawRectangle(barX, barY, barW, 6)
+        lcd.drawFilledRectangle(barX + 1, barY + 1, (barW - 2) * barProgress / barMax, 4, CUSTOM_COLOR)
+    end
+end
 local function update(vars, newOptions)
     if vars ~= nil then
         vars.options = newOptions
@@ -73,11 +88,7 @@ local function refresh(vars)
         print("QR module not initialized")
         return
     end
-    -- Update GPS data
-    local gpsData = getGps()
-    if gpsData and gpsData.valid then
-        vars.lastValidGps = gpsData
-    end
+    background(vars) --gets latest gps data
     -- Determine which prefix to use (from options)
     local prefix = ""
     for key, value in pairs(prefixes) do
@@ -91,14 +102,13 @@ local function refresh(vars)
         and prefix .. string.format("%.6f,%.6f", vars.lastValidGps.lat, vars.lastValidGps.lon)
         or prefix .. "no gps"
     -- Check if we need to generate a new QR code
-    local agesrc = vars.activeGps or vars.lastValidGps
-    local age = agesrc and ((getTime() - agesrc.time) / 100) or 0
     local interval = (vars.options.interval or 10)
-    if newStr ~= qr.inputstr and not qr:isRunning() and (age > interval or qr.inputstr == "") then
+    local activeAge = (vars.activeGps ~= nil) and ((getTime() - vars.activeGps.time) / 100) or interval + 1
+    if (newStr ~= qr.inputstr) and not qr:isRunning() and (activeAge > interval or qr.inputstr == "") then
         qr:start(newStr)
         vars.startQRc, vars.activeGps = vars.loopc, vars.lastValidGps
         qr.bmpPath = "/SCRIPTS/TELEMETRY/qr_temp.bmp" --enable bmp output
-        print("Starting QR generation for: " .. newStr, age, interval)
+        print("Starting QR generation for: " .. newStr, activeAge, interval)
     end
     if qr:isRunning() then --do generation steps
         if qr:genframe() then -- Generation complete
@@ -112,37 +122,25 @@ local function refresh(vars)
         lcd.setColor(CUSTOM_COLOR, vars.options.COLOR)
     end
     -- Draw QR code or status
-    if qr.isvalid or (bmpObj and qr.width) then -- Draw QR code, even the old one
+    if qr.width > 0 and (qr.isvalid or bmpObj) then -- Draw QR code, even the old one
         local qrArea = math.min(vars.zone.w, vars.zone.h - 20)
-        local scale = math.floor(qrArea / qr.width * 100)
+        local scale = math.floor(qrArea / qr.width * 98)
         local offsetX = vars.zone.x + (vars.zone.w - qr.width * scale / 100) / 2
         local offsetY = vars.zone.y + (vars.zone.h - 20 - qr.width * scale / 100) / 2
         drawBMP(qr, offsetX, offsetY, scale)
     end
+    -- now draw status overlays
     if qr:isRunning() then
-        -- Show generation progress
-        local boxW, boxH = 100, 35
-        local boxX = vars.zone.x + (vars.zone.w - boxW) / 2
-        local boxY = vars.zone.y + (vars.zone.h - boxH) / 2
-        lcd.drawFilledRectangle(boxX, boxY, boxW, boxH, WHITE)
-        lcd.drawRectangle(boxX, boxY, boxW, boxH, CUSTOM_COLOR, 2)
-        lcd.drawText(vars.zone.x + vars.zone.w/2, boxY + 5, "Generating...", CENTER + SMLSIZE + CUSTOM_COLOR)
-        local barW, barX, barY = boxW - 16, boxX + 8, boxY + 22
-        lcd.drawRectangle(barX, barY, barW, 6)
-        lcd.drawFilledRectangle(barX + 1, barY + 1, (barW - 2) * (qr.progress or 0) / 11, 4, CUSTOM_COLOR)
+        drawOverlayMsg(vars.zone, "Generating...", qr.progress or 0, 11)
     elseif vars.lastValidGps == nil or not vars.lastValidGps.valid then
-        -- No valid QR code yet
-        lcd.drawText(vars.zone.x + vars.zone.w/2, vars.zone.y + vars.zone.h/2 - 10, "Waiting for GPS", CENTER + SMLSIZE + CUSTOM_COLOR)
+        drawOverlayMsg(vars.zone, vars.lastValidGps and "Not set up" or "NO GPS")
     end
-
     -- Draw info text below QR code
     local textY = vars.zone.y + vars.zone.h - 15
-    -- Show GPS coordinates or status
-    if not vars.lastValidGps or not vars.lastValidGps.valid then
-        local msg = vars.lastValidGps and "not setup" or "NO GPS"
-        lcd.drawText(vars.zone.x + vars.zone.w/2, textY, msg, CENTER + SMLSIZE + CUSTOM_COLOR)
-    else
-        -- Show age of data
+    -- Show GPS coordinates/age if valid
+    if vars.lastValidGps and vars.lastValidGps.valid then
+        local agesrc = vars.activeGps or vars.lastValidGps --active takes precedence
+        local age = (agesrc ~= nil) and ((getTime() - agesrc.time) / 100) or -1
         local ageText = string.format("%.5f,%.5f [%.0fs old]", vars.lastValidGps.lat, vars.lastValidGps.lon, age)
         lcd.drawText(vars.zone.x + vars.zone.w/2, textY, ageText, CENTER + SMLSIZE + CUSTOM_COLOR)
     end
