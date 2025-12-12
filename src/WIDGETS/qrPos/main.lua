@@ -1,5 +1,6 @@
 local TELE_PATH = "/SCRIPTS/TELEMETRY"
 local qr = nil
+local qrMutex = nil --reference to vars of active widget using qr module
 local getGps = nil
 local COUNT_PER_SEC = 20 --opentx seems to run at 20hz
 
@@ -25,14 +26,12 @@ local function create(zone, options)
     if qr == nil then
         local module = loadfile(TELE_PATH .. "/qrPos.lua")(false)
         getGps = module.getGps
-        qr = module.qr:new({lowMem = false})  -- high speed mode
+        qr = module.qr:new()
         collectgarbage()
     end
     return {
         zone = zone,
         options = options,
-        loopc = 0,
-        startQRc = -10000,
         pxlSize = 1,
         lastValidGps = nil,
         activeGps = nil,
@@ -78,9 +77,7 @@ end
 local function update(vars, newOptions)
     if vars ~= nil then
         vars.options = newOptions
-        -- Force regeneration on option change
-        qr:reset()
-        vars.startQRc = -10000
+        vars.activeGps = nil --force refresh
     end
 end
 
@@ -116,17 +113,21 @@ local function refresh(vars)
     -- Check if we need to generate a new QR code
     local interval = (vars.options.interval or 10)
     local activeAge = (vars.activeGps ~= nil) and ((getTime() - vars.activeGps.time) / 100) or interval + 1
-    if (newStr ~= qr.inputstr) and not qr:isRunning() and (activeAge > interval or qr.inputstr == "") then
+    local myqr = getMyQr(vars)
+    if myqr and (newStr ~= qr.inputstr) and not qr:isRunning() and (activeAge > interval or qr.inputstr == "") then
+        qrMutex = vars
         qr:start(newStr)
-        vars.startQRc, vars.activeGps = vars.loopc, vars.lastValidGps
+        vars.activeGps = vars.lastValidGps
         qr.bmpPath = "/SCRIPTS/TELEMETRY/qr_temp.bmp" --enable bmp output
         print("Starting QR generation for: " .. newStr, activeAge, interval)
     end
-    if qr:isRunning() then --do generation steps
+    if myqr and qr:isRunning() then --do generation steps
         if qr:genframe() then -- Generation complete
             -- Calculate pixel size to fit in zone with padding
             vars.pxlSize = math.floor(math.min(vars.zone.w, vars.zone.h - 20) / (qr.width + 2))
-            bmpObj = nil --force reload bmp
+            vars.bmpObj = nil --force reload bmp
+            drawBMP(qr, vars) --saves context
+            qrMutex = nil
         end
     end
     -- Set custom color if specified
@@ -138,7 +139,7 @@ local function refresh(vars)
         drawBMP(qr, vars)
     end
     -- now draw status overlays
-    if qr:isRunning() then
+    if myqr and qr:isRunning() then
         drawOverlayMsg(vars.zone, "Generating...", qr.progress or 0, 11)
     elseif vars.lastValidGps == nil or not vars.lastValidGps.valid then
         drawOverlayMsg(vars.zone, vars.lastValidGps and "Not set up" or "NO GPS")
@@ -152,7 +153,6 @@ local function refresh(vars)
         local ageText = string.format("%.5f,%.5f [%.0fs old]", vars.lastValidGps.lat, vars.lastValidGps.lon, age)
         lcd.drawText(vars.zone.x + vars.zone.w/2, textY, ageText, CENTER + SMLSIZE + CUSTOM_COLOR)
     end
-    vars.loopc = vars.loopc + 1
 end
 
 return {
