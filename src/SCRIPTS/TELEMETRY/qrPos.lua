@@ -508,7 +508,8 @@ function Qr:genframe()
 end
 
 function Qr:toBMP(filepath, resumeIdx)
-    local w = self.width
+    local qrW = self.width
+    local w = qrW + 2  -- Add border
     local rowBytes = math.ceil(w / 8)
     local rowPadding = (4 - (rowBytes % 4)) % 4
     local imageSize = (rowBytes + rowPadding) * w
@@ -532,17 +533,17 @@ function Qr:toBMP(filepath, resumeIdx)
 
     local padding = string.rep("\000", rowPadding)
     for y = resumeIdx, 0, -1 do
-        if getUsage() > MAX_LOAD then return y end
-        local rowData = ""  -- String instead of table
+        if getUsage() > MAX_LOAD then io.close(f) return y end
+        local rowData = ""
         for byteIdx = 0, rowBytes - 1 do
             local byte = 0
             for bit = 0, 7 do
                 local x = byteIdx * 8 + bit
-                if x < w and self:getFrame(x + y * w) then
+                if x > 0 and x < w - 1 and y > 0 and y < w - 1 and x < w and self:getFrame((x - 1) + (y - 1) * qrW) then
                     byte = bit32.bor(byte, bit32.lshift(1, 7 - bit))
                 end
             end
-            rowData = rowData .. string.char(byte)  -- Direct concatenation
+            rowData = rowData .. string.char(byte)
         end
         writeData(rowData .. padding)
     end
