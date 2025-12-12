@@ -94,27 +94,22 @@ end
 
 --set bit to indicate cell in qrframe is immutable
 function Qr:setmask(x, y)
-    local bt
-    if x > y then
-        bt = x
-        x = y
-        y = bt
-    end
-    -- y*y = 1+3+5...
-    bt = bit32.rshift((y * y) + y, 1) + x
-    self.framask[bt] = true
+    if x > y then x, y = y, x end
+    local bt = bit32.rshift((y * y) + y, 1) + x
+    --now save this as bitpacked:
+    local word = bit32.rshift(bt, 5)  -- bt / 32
+    local bit = bit32.band(bt, 31)     -- bt % 32
+    self.framask[word] = bit32.bor(self.framask[word] or 0, bit32.lshift(1, bit))
 end
 
 -- check mask - since symmetrical use half
 function Qr:ismasked(x, y)
-    local bt
-    if x > y then
-        bt = x
-        x = y
-        y = bt
-    end
-    bt = bit32.rshift((y * y) + y, 1) + x
-    return self.framask[bt] == true
+    if x > y then x, y = y, x end
+    local bt = bit32.rshift((y * y) + y, 1) + x
+    --now use bitpacked read:
+    local word = bit32.rshift(bt, 5)  -- bt / 32
+    local bit = bit32.band(bt, 31)     -- bt % 32
+    return bit32.band(self.framask[word] or 0, bit32.lshift(1, bit)) ~= 0
 end
 
 -- bit packed frame set/get
@@ -178,6 +173,9 @@ function Qr:genframe()
     if self.progress == 3 then --insert finder patterns and alignment blocks
         -- insert finders - black to frame, white to mask
         self.framask = {}
+        local maxMaskIdx = bit32.rshift(self.width * (self.width + 1), 1)
+        local maskWords = math.ceil(maxMaskIdx / 32)
+        for i = 0, maskWords - 1 do self.framask[i] = 0 end --init bitpacked array
         self.frame = {}
         local numWords = math.ceil(self.width * self.width / 32) -- bitpacked words
         for i = 0, numWords - 1 do self.frame[i] = 0 end -- init bitpacked frame array
