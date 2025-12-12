@@ -34,7 +34,8 @@ Qr = {
     inputstr  = "",
     isvalid   = false,
     progress  = nil,
-    resume    = nil --continuation data store
+    resume    = nil, --continuation data store
+    bmpPath   = nil,
 }
 
 function Qr:new(o)
@@ -475,12 +476,78 @@ function Qr:genframe()
             end
             y = bit32.rshift(y, 1)
         end
-        self.progress = 0
         self:reset(true) --partial reset, don't reset frame & width
+        self.progress = 11
+        collectgarbage()
+        if getUsage() > 50 then return end
+    end
+    if self.progress == 11 then --apply mask pattern
+        if lcd == nil and self.bmpPath == nil then --desktop luac
+            self.bmpPath = "qr_temp.bmp"
+        end
+        if self.bmpPath ~= nil then
+            self.resume = self:toBMP(self.bmpPath, self.resume)
+            if self.resume ~= nil then --not finished
+                return --keep going next loop
+            end
+        end
+        self:reset(true) --partial reset, don't reset frame & width
+        self.bmpObj = nil --force reload bmp if drawn
         self.isvalid = true
         collectgarbage()
         return self.isvalid
     end
+end
+
+function Qr:toBMP(filepath, resumeIdx)
+    local w = self.width
+    local rowBytes = math.ceil(w / 8)
+    local rowPadding = (4 - (rowBytes % 4)) % 4
+    local imageSize = (rowBytes + rowPadding) * w
+    local fileSize = 62 + imageSize
+    local f = io.open(filepath, resumeIdx == nil and "wb" or "ab")
+    if not f then return false end
+
+    local function writeData(data)
+        if lcd ~= nil then io.write(f, data) else f:write(data) end
+    end
+
+    if resumeIdx == nil then
+        local function u16(n) return string.char(n % 256, math.floor(n / 256)) end
+        local function u32(n) return string.char(n % 256, math.floor(n / 256) % 256, math.floor(n / 65536) % 256, math.floor(n / 16777216)) end
+        writeData("BM" .. u32(fileSize) .. u32(0) .. u32(62) ..
+                  u32(40) .. u32(w) .. u32(w) .. u16(1) .. u16(1) ..
+                  u32(0) .. u32(imageSize) .. u32(2835) .. u32(2835) .. u32(2) .. u32(2) ..
+                  "\255\255\255\000" .. "\000\000\000\000")
+        resumeIdx = w - 1
+    end
+
+    local padding = string.rep("\000", rowPadding)
+    for y = resumeIdx, 0, -1 do
+        if getUsage() > 70 then return y end
+        local rowData = ""  -- String instead of table
+        for byteIdx = 0, rowBytes - 1 do
+            local byte = 0
+            for bit = 0, 7 do
+                local x = byteIdx * 8 + bit
+                if x < w and self:getFrame(x + y * w) then
+                    byte = bit32.bor(byte, bit32.lshift(1, 7 - bit))
+                end
+            end
+            rowData = rowData .. string.char(byte)  -- Direct concatenation
+        end
+        writeData(rowData .. padding)
+    end
+    io.close(f)
+    return nil
+end
+
+function Qr:drawBMP(x, y, scale)
+    if not self.isvalid or not self.bmpPath then return end
+    if self.bmpObj == nil then
+        self.bmpObj = Bitmap.open(self.bmpPath)
+    end
+    lcd.drawBitmap(self.bmpObj, x, y, scale or 100)
 end
 
 function Qr:draw(x, y, pxlSize, bgFlags, fgFlags, resumeIdx)
@@ -513,7 +580,7 @@ local ctx = {
 }
 local linkLabels   = { "plain", "native", "google",              "CoMaps",       "Guru" }
 local linkPrefixes = { "",      "geo:",   "comgooglemaps://?q=", "cm://map?ll=", "GURU://" }
-local prefixIndex = 1
+local prefixIndex = 2
 local doRedraw = true
 local continuous = false
 local continuousFrameInterval = 10*20 --in loopc (20 loopc = 1 second)
