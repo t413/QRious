@@ -508,7 +508,7 @@ local function colorToRGB(color)
     if type(color) == "table" and #color == 3 then return color
     elseif color and bit32.band(color, 0x8000) ~= 0 then -- has RGB_FLAG
         color = bit32.rshift(color, 16) --convert 16 bit leftover color
-        return {  bit32.band(bit32.rshift(color, 11), 0x1F) << 3, bit32.band(bit32.rshift(color, 5), 0x3F) << 2, bit32.band(color, 0x1F) << 3 }
+        return {  bit32.lshift(bit32.band(bit32.rshift(color, 11), 0x1F), 3), bit32.lshift(bit32.band(bit32.rshift(color, 5), 0x3F), 2), bit32.lshift(bit32.band(color, 0x1F), 3) }
     end
 end
 
@@ -581,7 +581,7 @@ end
 
 local loopc = 0
 local ctx = {
-    loopStart = 0,
+    qrStartTime = 0,
     lastValidGps = nil,
     qr = nil,
     drawIdx = nil,
@@ -592,7 +592,7 @@ local linkPrefixes = { "",      "geo:",   "comgooglemaps://?q=", "cm://map?ll=",
 local prefixIndex = 2
 local doRedraw = true
 local continuous = false
-local continuousFrameInterval = 10*20 --in loopc (20 loopc = 1 second)
+local AUTO_MODE_INTERVAL = 10 --seconds
 local gpsfield = nil
 local lastBGloopc = 0
 local LINEH = 8
@@ -620,6 +620,7 @@ function truncateStr(str, maxLen)
 end
 function clearQr()
     ctx.qr:reset()
+    ctx.qrStartTime = 0
     ctx.activeGps = nil
     doRedraw = true
 end
@@ -676,13 +677,12 @@ local function run(event)
             ctx.lastValidGps = gpsData --allows model to crash and preserve last known good
         end
         local newQrStr = linkPrefixes[prefixIndex] .. (ctx.lastValidGps and string.format("%.6f,%.6f", ctx.lastValidGps.lat, ctx.lastValidGps.lon) or "no gps")
-        local nextrender = continuousFrameInterval - (loopc - ctx.loopStart)
-        if continuous and (not ctx.qr.isvalid or (newQrStr ~= ctx.qr.inputstr)) and (not ctx.qr:isRunning()) and (nextrender <= 1) then
+        if continuous and (not ctx.qr.isvalid or (newQrStr ~= ctx.qr.inputstr)) and (not ctx.qr:isRunning()) and (getTime() - ctx.qrStartTime)/100 > AUTO_MODE_INTERVAL then
             doNewQr = true --start auto update
         end
         if doNewQr then
             ctx.qr:start(newQrStr)
-            ctx.loopStart, ctx.activeGps = loopc, ctx.lastValidGps --capture time of request and point used (includes time)
+            ctx.qrStartTime, ctx.activeGps = getTime(), ctx.lastValidGps --capture time of request and point used (includes time)
         end
 
         -- draw screen --
