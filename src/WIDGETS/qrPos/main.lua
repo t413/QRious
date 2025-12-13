@@ -62,16 +62,16 @@ function drawBMP(qr, vars, btmPadding)
 end
 
 local function drawOverlayMsg(zone, text, barProgress, barMax)
-    local boxW, boxH = 100, barProgress and 35 or 25
+    local strW, strH = lcd.sizeText(text, SMLSIZE)
+    local boxW = strW + 16
+    local boxH = barProgress and (strH + 14) or (strH + 6)
     local boxX = zone.x + (zone.w - boxW) / 2
     local boxY = zone.y + (zone.h - boxH) / 2
-
     lcd.drawFilledRectangle(boxX, boxY, boxW, boxH, WHITE)
     lcd.drawRectangle(boxX, boxY, boxW, boxH, CUSTOM_COLOR, 2)
-    lcd.drawText(zone.x + zone.w/2, boxY + 5, text, CENTER + SMLSIZE + CUSTOM_COLOR)
-
+    lcd.drawText(zone.x + zone.w/2, boxY + 3, text, CENTER + SMLSIZE + CUSTOM_COLOR)
     if barProgress and barMax then
-        local barW, barX, barY = boxW - 16, boxX + 8, boxY + 22
+        local barW, barX, barY = boxW - 16, boxX + 8, boxY + strH + 4
         lcd.drawRectangle(barX, barY, barW, 6)
         lcd.drawFilledRectangle(barX + 1, barY + 1, (barW - 2) * barProgress / barMax, 4, CUSTOM_COLOR)
     end
