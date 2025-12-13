@@ -9,7 +9,8 @@ local myoptions = {
     { "linkType", CHOICE, 2, nil }, --populated later in create
     { "interval", VALUE, 10, 2, 60 }, --default, min, max (seconds)
     { "qrColor",   COLOR, BLUE },
-    { "textColor", COLOR, DARKBLUE }
+    { "textColor", COLOR, DARKBLUE },
+    { "qrBG",      COLOR, BLACK },
 }
 
 local prefixes = {
@@ -114,7 +115,7 @@ local function refresh(vars)
     local myqr = getMyQr(vars)
     if myqr and (newStr ~= vars.lastQrStr) and not qr:isRunning() and (activeAge > interval or not vars.bmpObj) then
         qrMutex = vars
-        qr.fgColor, qr.bgColor = vars.options.qrColor, nil
+        qr.fgColor, qr.bgColor = vars.options.qrColor, vars.options.qrBG
         qr:start(newStr)
         vars.lastQrStr, vars.activeGps = newStr, vars.lastValidGps
         qr.bmpPath = "/SCRIPTS/TELEMETRY/qr_temp.bmp" --enable bmp output

@@ -514,13 +514,14 @@ end
 
 function Qr:toBMP(filepath, resumeIdx, fgColor, bgColor)
     fgColor = colorToRGB(fgColor or {0, 0, 0})
-    bgColor = colorToRGB(bgColor or {255, 255, 255})
+    bgColor = bgColor and colorToRGB(bgColor) or nil
+    if bgColor and bgColor[1] == 0 and bgColor[2] == 0 and bgColor[3] == 0 then bgColor = nil end --black to transparent
     local qrW = self.width
-    local w = qrW + 2  -- Add border
-    local rowBytes = math.ceil(w / 8)
+    local w = qrW + 2
+    local rowBytes = w * 4  -- 4 bytes per pixel (32-bit BGRA)
     local rowPadding = (4 - (rowBytes % 4)) % 4
     local imageSize = (rowBytes + rowPadding) * w
-    local fileSize = 62 + imageSize
+    local fileSize = 54 + imageSize
     local f = io.open(filepath, resumeIdx == nil and "wb" or "ab")
     if not f then return false end
 
@@ -531,11 +532,9 @@ function Qr:toBMP(filepath, resumeIdx, fgColor, bgColor)
     if resumeIdx == nil then
         local function u16(n) return string.char(n % 256, math.floor(n / 256)) end
         local function u32(n) return string.char(n % 256, math.floor(n / 256) % 256, math.floor(n / 65536) % 256, math.floor(n / 16777216)) end
-        writeData("BM" .. u32(fileSize) .. u32(0) .. u32(62) ..
-                  u32(40) .. u32(w) .. u32(w) .. u16(1) .. u16(1) ..
-                  u32(0) .. u32(imageSize) .. u32(2835) .. u32(2835) .. u32(2) .. u32(2) ..
-                  string.char(bgColor[3], bgColor[2], bgColor[1], 0) ..  -- BGR format
-                  string.char(fgColor[3], fgColor[2], fgColor[1], 0))    -- BGR format
+        writeData("BM" .. u32(fileSize) .. u32(0) .. u32(54) ..
+                  u32(40) .. u32(w) .. u32(w) .. u16(1) .. u16(32) ..
+                  u32(0) .. u32(imageSize) .. u32(2835) .. u32(2835) .. u32(0) .. u32(0))
         resumeIdx = w - 1
     end
 
@@ -543,15 +542,10 @@ function Qr:toBMP(filepath, resumeIdx, fgColor, bgColor)
     for y = resumeIdx, 0, -1 do
         if getUsage() > MAX_LOAD then io.close(f) return y end
         local rowData = ""
-        for byteIdx = 0, rowBytes - 1 do
-            local byte = 0
-            for bit = 0, 7 do
-                local x = byteIdx * 8 + bit
-                if x > 0 and x < w - 1 and y > 0 and y < w - 1 and x < w and self:getFrame((x - 1) + (y - 1) * qrW) then
-                    byte = bit32.bor(byte, bit32.lshift(1, 7 - bit))
-                end
-            end
-            rowData = rowData .. string.char(byte)
+        for x = 0, w - 1 do
+            local isQr = x > 0 and x < w - 1 and y > 0 and y < w - 1 and self:getFrame((x - 1) + (y - 1) * qrW)
+            local color = (isQr and fgColor) or bgColor
+            rowData = rowData .. (color and string.char(color[3], color[2], color[1], 255) or "\000\000\000\000")
         end
         writeData(rowData .. padding)
     end
