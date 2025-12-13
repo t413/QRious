@@ -584,6 +584,7 @@ local continuous = false
 local continuousFrameInterval = 10*20 --in loopc (20 loopc = 1 second)
 local gpsfield = nil
 local lastBGloopc = 0
+local LINEH = 8
 
 local function getGps()
     if gpsfield == nil then
@@ -606,10 +607,24 @@ function truncateStr(str, maxLen)
         return str
     end
 end
+function clearQr()
+    ctx.qr:reset()
+    ctx.activeGps = nil
+    doRedraw = true
+end
 
 local function init()
     ctx.qr = Qr:new() --creates instance from prototype
     Qr = nil --delete prototype
+    if lcd then
+        ctx.qrArea = math.floor(LCD_W / 2)  -- Left half for QR
+        ctx.statusX = ctx.qrArea + 1  -- Status area starts after QR
+
+        if lcd.sizeText then
+            LINEH = select(2, lcd.sizeText("Test", SMLSIZE))
+            print("qr: working sizeText line height:", LINEH)
+        end
+    end
 end
 
 local function background() --called when script isn't being shown
@@ -627,26 +642,21 @@ local function run(event)
     loopc = loopc + 1
     if lcd ~= nil then
         local doNewQr = false
-        local qrArea = math.floor(LCD_W / 2)  -- Left half for QR
-        local statusX = qrArea + 1  -- Status area starts after QR
 
         -- handle events --
         if event == EVT_ENTER_BREAK then
             doNewQr = true
         elseif event == EVT_VIRTUAL_MENU or event == EVT_ENTER_LONG then
             continuous = not continuous
-            ctx.qr:reset()
-            doRedraw = true
+            clearQr()
         elseif event == EVT_EXIT_BREAK then
             doRedraw = true
         elseif event == EVT_VIRTUAL_INC and (prefixIndex < #linkPrefixes) then
             prefixIndex = prefixIndex + 1
-            ctx.qr:reset()
-            doRedraw = true
+            clearQr()
         elseif event == EVT_VIRTUAL_DEC and (prefixIndex > 1) then
             prefixIndex = prefixIndex - 1
-            ctx.qr:reset()
-            doRedraw = true
+            clearQr()
         end
 
         -- update data values --
@@ -667,43 +677,48 @@ local function run(event)
         -- draw screen --
         if (doRedraw and ctx.drawIdx == nil) or ctx.qr:isRunning() then
             lcd.clear()
+        else
+            lcd.drawFilledRectangle(ctx.qrArea, 0, LCD_W - ctx.qrArea, LCD_H, COLOR_THEME_PRIMARY2 or ERASE)
         end
 
-        -- Draw QR area (left half)
         if ctx.qr:isRunning() then
-            lcd.drawText(qrArea / 2, LCD_H / 2 - 10, "Generating", SMLSIZE + CENTER)
-            lcd.drawGauge(10, LCD_H / 2, qrArea - 20, 5, ctx.qr.progress, 11)
+            lcd.drawText(ctx.qrArea / 2, LCD_H / 2 - 10, "Generating", SMLSIZE + CENTER)
+            lcd.drawGauge(10, LCD_H / 2, ctx.qrArea - 20, 5, ctx.qr.progress, 11)
         elseif ctx.qr.isvalid and (doRedraw or ctx.drawIdx ~= nil) then
-            local pxlSize = math.min(math.floor(qrArea / (ctx.qr.width + 2)), math.floor(LCD_H / (ctx.qr.width + 2)))
-            local qrXoffset = math.floor((qrArea - pxlSize * (ctx.qr.width + 2)) / 2)
+            local pxlSize = math.min(math.floor(ctx.qrArea / (ctx.qr.width + 2)), math.floor(LCD_H / (ctx.qr.width + 2)))
+            local qrXoffset = math.floor((ctx.qrArea - pxlSize * (ctx.qr.width + 2)) / 2)
             local qrYoffset = math.floor((LCD_H - pxlSize * (ctx.qr.width + 2)) / 2)
             ctx.drawIdx = ctx.qr:draw(qrXoffset, qrYoffset, pxlSize, nil, nil, ctx.drawIdx)
         elseif doRedraw and not continuous then
-            lcd.drawText(qrArea / 2, LCD_H / 2 - 10, "Press ENTER", SMLSIZE + CENTER)
-            lcd.drawText(qrArea / 2, LCD_H / 2, "to generate", SMLSIZE + CENTER)
+            lcd.drawLine(ctx.qrArea - 2, 0, ctx.qrArea - 2, LCD_H, SOLID, FORCE)
+            lcd.drawText(ctx.qrArea / 2, 2, "QRious Lua", SMLSIZE + CENTER)
+            lcd.drawText(ctx.qrArea / 2, 2 + LINEH, "by t413", SMLSIZE + CENTER)
+            lcd.drawText(ctx.qrArea / 2, LCD_H / 2 - LINEH/2, "Press ENTER", SMLSIZE + CENTER)
+            lcd.drawText(ctx.qrArea / 2, LCD_H / 2 + LINEH/2, "to generate", SMLSIZE + CENTER)
         end
 
         -- Draw status area (right half)
-        local lineY, lineH = 22, 8 --starting y and line height
+        local lineY = 22 --starting y
         if not ctx.lastValidGps then
-            lcd.drawText(statusX, lineY, "NOT SET UP", SMLSIZE)
+            lcd.drawText(ctx.statusX, lineY, "NOT SET UP", SMLSIZE)
         elseif not ctx.lastValidGps.valid then
-            lcd.drawText(statusX, lineY, "NO FIX", SMLSIZE)
+            lcd.drawText(ctx.statusX, lineY, "NO FIX", SMLSIZE)
         else --valid gps
             lineY = 2 --reset to top
-            lcd.drawText(statusX, lineY, string.format("%.6f", ctx.lastValidGps.lat), SMLSIZE)
-            lineY = lineY + lineH
-            lcd.drawText(statusX, lineY, string.format("%.6f", ctx.lastValidGps.lon), SMLSIZE)
+            lcd.drawText(ctx.statusX, lineY, string.format("%.6f", ctx.lastValidGps.lat), SMLSIZE)
+            lineY = lineY + LINEH
+            lcd.drawText(ctx.statusX, lineY, string.format("%.6f", ctx.lastValidGps.lon), SMLSIZE)
         end
-        lineY = lineY + lineH + 2
-        lcd.drawText(statusX, lineY, linkLabels[prefixIndex] .. " link", SMLSIZE) -- Link Type
-        lineY = lineY + lineH
-        if ctx.activeGps or ctx.lastValidGps then
-            local dt = (getTime() - (ctx.activeGps or ctx.lastValidGps).time) / 100
-            lcd.drawText(statusX, lineY, string.format("%ds old", dt), SMLSIZE)
-            lineY = lineY + lineH
+        lineY = lineY + LINEH + 2
+        lcd.drawText(ctx.statusX, lineY, linkLabels[prefixIndex] .. " link", SMLSIZE) -- Link Type
+        lineY = lineY + LINEH
+        local gps_src = ctx.activeGps or ctx.lastValidGps
+        local dt = gps_src and gps_src.valid and (getTime() - gps_src.time) / 100 or nil
+        if dt and dt > 5 then
+            lcd.drawText(ctx.statusX, lineY, string.format("%ds old", dt), SMLSIZE)
+            lineY = lineY + LINEH
         end
-        lcd.drawText(statusX, LCD_H - lineH, (continuous and "Auto" or "Manual") .. " mode", SMLSIZE) -- Mode, bottom aligned
+        lcd.drawText(ctx.statusX, LCD_H - LINEH, (continuous and "Auto" or "Manual") .. " mode", SMLSIZE) -- Mode, bottom aligned
 
         doRedraw = false
     end
