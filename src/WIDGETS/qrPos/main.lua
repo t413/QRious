@@ -103,7 +103,7 @@ local function refresh(vars)
     background(vars) --gets latest gps data
     -- Determine which prefix to use (from options)
     local linkidx = vars.options.linkType
-    local prefix = linkPrefixes[linkidx]
+    local prefix = linkPrefixes[linkidx or 1] or 'geo:'
     -- Build QR string
     local newStr = (vars.lastValidGps and vars.lastValidGps.valid)
         and prefix .. string.format("%.6f,%.6f", vars.lastValidGps.lat, vars.lastValidGps.lon)
