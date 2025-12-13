@@ -3,15 +3,12 @@ local qr = nil
 local qrMutex = nil --reference to vars of active widget using qr module
 local getGps = nil
 local COUNT_PER_SEC = 20 --opentx seems to run at 20hz
+local linkPrefixes = nil --set in create() from qrPos.lua
 
 local myoptions = {
-    { "COLOR", COLOR, BLUE },
-    { "linknone",   BOOL, 0 },
-    { "linkgeo",    BOOL, 1 },
-    { "linkgoogle", BOOL, 0 },
-    { "linkcomaps", BOOL, 0 },
-    { "linkguru",   BOOL, 0 },
-    { "interval", VALUE, 10, 60, 2 }, --default, max, min (seconds)
+    { "linkType", CHOICE, 2, nil }, --populated later in create
+    { "interval", VALUE, 10, 2, 60 }, --default, min, max (seconds)
+    { "COLOR",   COLOR, BLUE },
 }
 
 local prefixes = {
@@ -27,6 +24,8 @@ local function create(zone, options)
         local module = loadfile(TELE_PATH .. "/qrPos.lua")(false)
         getGps = module.getGps
         qr = module.qr:new()
+        myoptions[1][4] = module.linkLabels
+        linkPrefixes = module.linkPrefixes
         collectgarbage()
     end
     return {
@@ -78,6 +77,7 @@ local function update(vars, newOptions)
     if vars ~= nil then
         vars.options = newOptions
         vars.activeGps = nil --force refresh
+        vars.bmpObj = nil --force reload bmp
     end
 end
 
@@ -99,13 +99,8 @@ local function refresh(vars)
     end
     background(vars) --gets latest gps data
     -- Determine which prefix to use (from options)
-    local prefix = ""
-    for key, value in pairs(prefixes) do
-        if vars.options[key] == 1 then
-            prefix = value
-            break
-        end
-    end
+    local linkidx = vars.options.linkType
+    local prefix = linkPrefixes[linkidx]
     -- Build QR string
     local newStr = (vars.lastValidGps and vars.lastValidGps.valid)
         and prefix .. string.format("%.6f,%.6f", vars.lastValidGps.lat, vars.lastValidGps.lon)

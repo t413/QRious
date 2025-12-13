@@ -781,4 +781,7 @@ if lcd == nil then
     end
 end
 
-return { init=init, run = run, background=background, qr=Qr, getGps=getGps }
+return {
+    init=init, run = run, background=background, qr=Qr, getGps=getGps,
+    linkLabels=linkLabels, linkPrefixes=linkPrefixes
+}
