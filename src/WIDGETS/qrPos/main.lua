@@ -44,15 +44,15 @@ function getMyQr(vars)
 end
 
 function drawBMP(qr, vars, btmPadding)
-    if vars.bmpObj == nil and qr.bmpPath == nil then return end
     if vars.bmpObj == nil then
+        if qr.bmpPath == nil then return end
         vars.bmpObj = Bitmap.open(qr.bmpPath)
-        btmPadding = btmPadding or 20
-        local qrArea = math.min(vars.zone.w, vars.zone.h - btmPadding)
-        local scale = math.floor(qrArea / qr.width * 98)
+        local bmpW, bmpH = Bitmap.getSize(vars.bmpObj)
+        local availW, availH = vars.zone.w, vars.zone.h - (btmPadding or 14)
+        local scale = math.min(math.floor(availW / bmpW * 100), math.floor(availH / bmpH * 100))
         vars.bmpPos = {
-            offsetX = vars.zone.x + (vars.zone.w - qr.width * scale / 100) / 2,
-            offsetY = vars.zone.y + (vars.zone.h - btmPadding - qr.width * scale / 100) / 2,
+            offsetX = vars.zone.x + (availW - bmpW * scale / 100) / 2,
+            offsetY = vars.zone.y + (availH - bmpH * scale / 100) / 2,
             scale = scale
         }
     end
