@@ -492,7 +492,7 @@ function Qr:genframe()
             self.bmpPath = "qr_temp.bmp"
         end
         if self.bmpPath ~= nil then
-            self.resume = self:toBMP(self.bmpPath, self.resume)
+            self.resume = self:toBMP(self.bmpPath, self.resume, self.fgColor, self.bgColor)
             if self.resume ~= nil then --not finished
                 return --keep going next loop
             end
@@ -504,7 +504,17 @@ function Qr:genframe()
     end
 end
 
-function Qr:toBMP(filepath, resumeIdx)
+local function colorToRGB(color)
+    if type(color) == "table" and #color == 3 then return color
+    elseif color and bit32.band(color, 0x8000) ~= 0 then -- has RGB_FLAG
+        color = bit32.rshift(color, 16) --convert 16 bit leftover color
+        return {  bit32.band(bit32.rshift(color, 11), 0x1F) << 3, bit32.band(bit32.rshift(color, 5), 0x3F) << 2, bit32.band(color, 0x1F) << 3 }
+    end
+end
+
+function Qr:toBMP(filepath, resumeIdx, fgColor, bgColor)
+    fgColor = colorToRGB(fgColor or {0, 0, 0})
+    bgColor = colorToRGB(bgColor or {255, 255, 255})
     local qrW = self.width
     local w = qrW + 2  -- Add border
     local rowBytes = math.ceil(w / 8)
@@ -524,7 +534,8 @@ function Qr:toBMP(filepath, resumeIdx)
         writeData("BM" .. u32(fileSize) .. u32(0) .. u32(62) ..
                   u32(40) .. u32(w) .. u32(w) .. u16(1) .. u16(1) ..
                   u32(0) .. u32(imageSize) .. u32(2835) .. u32(2835) .. u32(2) .. u32(2) ..
-                  "\255\255\255\000" .. "\000\000\000\000")
+                  string.char(bgColor[3], bgColor[2], bgColor[1], 0) ..  -- BGR format
+                  string.char(fgColor[3], fgColor[2], fgColor[1], 0))    -- BGR format
         resumeIdx = w - 1
     end
 

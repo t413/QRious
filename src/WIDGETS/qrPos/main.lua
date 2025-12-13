@@ -8,7 +8,8 @@ local linkPrefixes = nil --set in create() from qrPos.lua
 local myoptions = {
     { "linkType", CHOICE, 2, nil }, --populated later in create
     { "interval", VALUE, 10, 2, 60 }, --default, min, max (seconds)
-    { "COLOR",   COLOR, BLUE },
+    { "qrColor",   COLOR, BLUE },
+    { "textColor", COLOR, DARKBLUE }
 }
 
 local prefixes = {
@@ -111,6 +112,7 @@ local function refresh(vars)
     local myqr = getMyQr(vars)
     if myqr and (newStr ~= qr.inputstr) and not qr:isRunning() and (activeAge > interval or qr.inputstr == "") then
         qrMutex = vars
+        qr.fgColor, qr.bgColor = vars.options.qrColor, nil
         qr:start(newStr)
         vars.activeGps = vars.lastValidGps
         qr.bmpPath = "/SCRIPTS/TELEMETRY/qr_temp.bmp" --enable bmp output
@@ -125,11 +127,8 @@ local function refresh(vars)
             qrMutex = nil
         end
     end
-    -- Set custom color if specified
-    if vars.options.COLOR ~= nil then
-        lcd.setColor(CUSTOM_COLOR, vars.options.COLOR)
-    end
     -- Draw QR code or status
+    lcd.setColor(CUSTOM_COLOR, vars.options.textColor or BLACK)
     if vars.bmpPos or qr.isvalid then -- Draw QR code, even the old one
         drawBMP(qr, vars)
     end
