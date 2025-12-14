@@ -10,7 +10,20 @@
 
 Your drone / plane gone down in a field and it's hard to find?
 
-## Open this OpenTX/EdgeTX widget, scan the QR, open maps!
+## Just scan the QR, open maps, walk right to it!
+
+![scan example](https://t413.com/p/2021-qrious/qrious_demo.gif)
+
+## Three ways to use it
+
+1. **Widget** (on color screen radios like the TX16X)
+   - Highly customizable! Colors, transparency, update rate, link type.
+1. **Telemetry page** (on b/w radios like the X-Lite)
+   - Can run alongside BF/iNav/Ardu scripts. Meticulously developed for low memory usage.
+   - gets GPS updates in the background, renders QR code when needed
+1. **System Tool** _(not the recommended use-case, requires telem link when opened)_
+
+## Features
 
 - Quick and easy way to find your model.. use your phone!
 - Works with your inbuilt telemetry data stream
@@ -19,49 +32,56 @@ Your drone / plane gone down in a field and it's hard to find?
   * google specific link for opening in google maps specifically
   * CoMaps link for opening in the free open source [CoMaps App](https://comaps.app) for offline mapping
   * GURU maps link for opening in [Guru Maps](https://gurumaps.app) for offline mapping
-- can be launched as a standalone script
-- can be added as a telemetry widget
 - Works from the command line (`lua qrPos.lua 'data'`) .. great for testing!
 
 _Join my [Discord](https://3d.t413.com/go/discord?ref=gh-qrious) and say hi and talk shop!_
 
-_Example running on my TBS Tango 2:_
-![scan example](https://t413.com/p/2021-qrious/scan-example.jpeg)
-
-
 ## Installation & Usage
+
+Installs just like any other opentx/edgetx lua script! Just copy three files.
 
 - Download the code ([direct link to zip](https://github.com/t413/QRious/archive/refs/heads/main.zip))
 - Copy to SD Card for your EdgeTx/OpenTx radio
   * Copy `SCRIPTS/TELEMETRY/qrPos.lua` - *with the same path*
-  * Copy `WIDGETS/qrPos/main.lua` - *with the same path*
+  * Copy `SCRIPTS/TOOLS/qrPos.lua` - *with the same path* (will make it available in system->tools)
+  * Copy `WIDGETS/qrPos/` folder to sd-card
+    - _only needed for color screen radios_
+- Alternatively, for my fellow mac/linux terminal nerds:
+  * Copy with `rsync -av ~/Downloads/QRious-main/src/ /Volumes/DISK_IMG/` (changing source and dest paths with tab-complete)
 - Add as a telemetry widget on your radio (model edit, last page)
-- Run as a standalone script (under system menu, scripts)
 
 
-## Limitations
+### Widget setup on color screen radio:
+<p align="center">
+  <img src="https://t413.com/p/2021-qrious/qrious_demo_colorscreen.gif" width="400" alt="widget setup example">
+</p>
 
-- Uses a fair bit of RAM memory
-  * as optimized as I could make it– only uses high RAM when actually generating QR code
-- Some radios are hard to scan
-  * OLED displays (like Tango 2) are hard to scan in daylight
-  * Haven't tested color radios
-- If you've _lost_ telemetry it won't work.
-  * Open/EdgeTX doesn't seem to serve stale telem values.
-  * so *works best as a widget* unless you're getting telemetry data
+### Telemetry-page set up on b/w radio
+<p align="center">
+  <img src="https://t413.com/p/2021-qrious/qrious_demo_lite.gif" width="400" alt="telem page setup example">
+</p>
 
-_Example running on my old Frsky X-Lite and in the terminal_
-![opentx example](https://t413.com/p/2021-qrious/opentx.jpeg)
+
+## Widget Configuration / EdgeTx Version
+
+On color display radios you can modify settings (see the gif!) Some features require EdgeTx 2.11+ ([github](https://github.com/EdgeTX/edgetx/releases))!
+- Dropdown picker for which link-type you'd like. (On old versions you'll just see a simple switch)
+- More options! Older versions are limited to 5. Transparency is the #6 option.
+
 
 ## Key Technical Achievements
 
-- **Fully Reentrant Architecture**: 800+ lines of QR generation split into 10 incremental stages that pause/resume across execution cycles without blocking radio telemetry
+- **Fully Reentrant Architecture**: 800+ lines of QR generation split into 11 incremental stages that pause/resume across execution cycles without blocking radio telemetry
 - **CPU Load Monitoring**: Each stage checks `getUsage()` and yields at 40-80% thresholds to keep the radio responsive
-- **Aggressive Memory Management**: Clears buffers (`eccbuf`, `genpoly`, `framask`) immediately after use with strategic `collectgarbage()` calls for RAM-constrained microcontrollers
-- **Lua Array Adaptation**: Reimplemented QR algorithms for Lua's 1-indexed arrays, including Galois field arithmetic via lookup tables
-- **Symmetrical Masking**: Stores only half the mask data by exploiting coordinate symmetry (`x > y` mirrors `y > x`)
+- **Crazy-optimized for low memory**:
+  * Bit-packed arrays for massive memory savings over Lua arrays
+  * Static lookups are stored as strings for big memory savings over Lua arrays
+- **Two ways of rendering!**
+  * Full color / transparency BMP file creation! Allows Widgets to work with high-speed rendering they require. Also non-blocking reentrant code.
+  * Direct rendering for tool view or telemetry page on black and white radios. Also non-blocking and draws over multiple iterations.
+- **Works alongside** other memory-hog scripts like the iNav script! Run both!
+- **Aggressive Memory Management**: Clears buffers (`eccbuf`, `genpoly`, `framask`) immediately after use with strategic `collectgarbage()` calls for these RAM-constrained microcontrollers
 - **Multi-Platform Testing**: Runs on OpenTX/EdgeTX hardware, simulators, and command-line with ASCII QR output
-- **Live GPS Integration**: Generates scannable codes from real-time telemetry with multiple mapping service prefixes
 
 
 ## Testing / Development
