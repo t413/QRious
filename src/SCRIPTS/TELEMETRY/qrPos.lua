@@ -492,7 +492,7 @@ function Qr:genframe()
             self.bmpPath = "qr_temp.bmp"
         end
         if self.bmpPath ~= nil then
-            self.resume = self:toBMP(self.bmpPath, self.resume, self.fgColor, self.bgColor)
+            self.resume = self:toBMP(self.bmpPath, self.resume, self.fgColor, self.bgColor, self.bgTransp)
             if self.resume ~= nil then --not finished
                 return --keep going next loop
             end
@@ -512,10 +512,10 @@ local function colorToRGB(color)
     end
 end
 
-function Qr:toBMP(filepath, resumeIdx, fgColor, bgColor)
-    fgColor = colorToRGB(fgColor or {0, 0, 0})
-    bgColor = bgColor and colorToRGB(bgColor) or nil
-    if bgColor and bgColor[1] == 0 and bgColor[2] == 0 and bgColor[3] == 0 then bgColor = nil end --black to transparent
+function Qr:toBMP(filepath, resumeIdx, fgColor, bgColor, bgTransp)
+    fgColor = colorToRGB(fgColor) or {0, 0, 0}
+    bgColor = colorToRGB(bgColor) or {255, 255, 255}
+    bgTransp = math.floor((bgTransp or 50) * 255 / 100) --0-100 mapped to 0-255
     local qrW = self.width
     local w = qrW + 2
     local rowBytes = w * 4  -- 4 bytes per pixel (32-bit BGRA)
@@ -545,7 +545,7 @@ function Qr:toBMP(filepath, resumeIdx, fgColor, bgColor)
         for x = 0, w - 1 do
             local isQr = x > 0 and x < w - 1 and y > 0 and y < w - 1 and self:getFrame((x - 1) + (y - 1) * qrW)
             local color = (isQr and fgColor) or bgColor
-            rowData = rowData .. (color and string.char(color[3], color[2], color[1], 255) or "\000\000\000\000")
+            rowData = rowData .. string.char(color[3], color[2], color[1], isQr and 255 or bgTransp)
         end
         writeData(rowData .. padding)
     end

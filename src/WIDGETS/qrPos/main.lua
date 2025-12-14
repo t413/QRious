@@ -11,6 +11,7 @@ local myoptions = {
     { "qrColor",   COLOR, BLUE },
     { "textColor", COLOR, DARKBLUE },
     { "qrBG",      COLOR, BLACK },
+    { "bgTransp",  VALUE, 50, 0, 100 },
 }
 
 local prefixes = {
@@ -115,7 +116,7 @@ local function refresh(vars)
     local myqr = getMyQr(vars)
     if myqr and (newStr ~= vars.lastQrStr) and not qr:isRunning() and (activeAge > interval or not vars.bmpObj) then
         qrMutex = vars
-        qr.fgColor, qr.bgColor = vars.options.qrColor, vars.options.qrBG
+        qr.fgColor, qr.bgColor, qr.bgTransp = vars.options.qrColor, vars.options.qrBG, vars.options.bgTransp
         qr:start(newStr)
         vars.lastQrStr, vars.activeGps = newStr, vars.lastValidGps
         qr.bmpPath = "/SCRIPTS/TELEMETRY/qr_temp.bmp" --enable bmp output
