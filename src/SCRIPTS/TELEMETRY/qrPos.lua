@@ -350,7 +350,7 @@ function Qr:genframe()
                 end
                 for id = tmp.id, self.datablkw + blk - 1 do
                     tmp.id = id
-                    if getUsage() > MAX_LOAD then return end
+                    if id > tmp.id_start and getUsage() > MAX_LOAD then return end
                     local xor_val = bit32.bxor(self.eccbuf[tmp.y + id], self.eccbuf[tmp.k])
                     local fb = xor_val < 255 and string.byte(GLOG_LOOKUP, xor_val + 1) or nil
                     if fb and fb ~= 255 then
@@ -415,7 +415,7 @@ function Qr:genframe()
         local m = (self.datablkw + self.eccblkwid) * (self.neccblk1 + self.neccblk2) + self.neccblk2
         for i = tmp.i, m - 1 do
             tmp.i = i
-            if getUsage() > MAX_LOAD then return end
+            if i > tmp.i_start and getUsage() > MAX_LOAD then return end
             local t = self.eccbuf[i]
             for j = 0, 7 do
                 if bit32.band(0x80, t) >= 1 then
