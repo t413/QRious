@@ -348,6 +348,7 @@ function Qr:genframe()
                     end
                     tmp.id = 0
                 end
+                tmp.id_start = tmp.id  -- Capture starting position
                 for id = tmp.id, self.datablkw + blk - 1 do
                     tmp.id = id
                     if id > tmp.id_start and getUsage() > MAX_LOAD then return end
@@ -414,6 +415,7 @@ function Qr:genframe()
         local tmp = self.resume
         local m = (self.datablkw + self.eccblkwid) * (self.neccblk1 + self.neccblk2) + self.neccblk2
         for i = tmp.i, m - 1 do
+            tmp.i_start = tmp.i
             tmp.i = i
             if i > tmp.i_start and getUsage() > MAX_LOAD then return end
             local t = self.eccbuf[i]
