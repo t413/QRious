@@ -102,3 +102,7 @@ lua src/SCRIPTS/TELEMETRY/qrPos.lua "geo:37.87133,-122.31750"
 
 This prints debug information about the generation process and the QR code as ASCII to the console. Example output of that command is in the screeshot above.
 
+## Shoutouts
+
+- Shoutout to Albert Koczy and his [edgetx-gps-qrcode](https://github.com/alufers/edgetx-gps-qrcode) widget! We independently developed ultra similar solution!? The world is so small sometimes. My project is from 2021 but was quietly released, his is from 2024 and has gained much more traction.
+  * Albert's script uses a LUA QR library with few optimizations for low memory so he recommends not leaving it open while flying. Mine has a bunch of fancy tricks up its sleeves and doesn't have any limitations.
